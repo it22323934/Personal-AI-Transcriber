@@ -60,6 +60,11 @@ Each summary is a request to OpenAI on your account, so it's your choice:
 - **While recording**, the same switch (in the side panel or the mini player) changes it for the current lecture only. When TORU moves on to the next lecture, the new note keeps your choice.
 - With it off you still get the full transcript. You can write notes for any lecture later with **Write study notes** on its Summary tab.
 
+### When nothing can be heard
+
+- **While recording:** if the tab plays nothing for 20 seconds (the video is paused or muted, or hasn't started), the side panel and the mini player say **Nothing is playing in the recorded tab**. Recording carries on, and silence isn't sent, so it costs nothing.
+- **When you stop:** if nothing was said and you typed no notes, TORU doesn't keep an empty note. It tells you instead: **Nothing was heard in "…", so no note was saved**, in the side panel, and **Nothing was saved** in the mini player. If you typed notes, the note is kept with them.
+
 ### Side panel or mini player
 
 You don't need to keep TORU open. Closing the side panel never stops a recording; the toolbar icon shows **REC** (or **II** when paused).
@@ -125,15 +130,28 @@ Model limits come from a built-in table: gpt-5 family 400k, gpt-4.1 about 1M, gp
 
 **Settings → Appearance**: **System** (default) follows Windows' light or dark mode and switches with it; **Light** and **Dark** override it. The side panel, library and mini player all follow the choice.
 
+## Languages
+
+TORU transcribes about 80 languages, and can write the study notes in a different language from the lecture's.
+
+- **Spoken language** (Settings → Transcription, or per project). Auto-detect works for most lectures, but pick the language for anything other than English. TORU then tells the transcriber to expect that language plus English, because lecturers often mix in English terms. It also asks for the language's own script, so a Sinhala lecture comes back as සිංහල, not romanised or translated. Put names and technical terms in the project's **Vocabulary**, spelled the way they should appear.
+- **How well it works.** OpenAI's models are strong for about 57 languages, including English, German, French, Hindi and Tamil. Languages marked **less accurate** in the list, Sinhala among them, are understood too, but expect more mistakes, especially with mixed Sinhala–English speech or poor audio.
+- **Check first.** Settings → **Test** transcribes one second of silence with your model and language, so you know straight away whether OpenAI accepts them.
+- **Write study notes in** (Settings → Study notes and questions, or per project). Choose **The language of the lecture** or any other language, for example English notes from a Sinhala or German lecture. The default is English, as before.
+- **Ask** answers in the language you write your question in.
+- **Display and search.** Sinhala, Tamil, Hindi and other scripts display with Windows' Nirmala UI font (or Noto fonts elsewhere), and search works in any script.
+
 ## Costs (your OpenAI account)
 
 | Part | Default model | Roughly |
 |---|---|---|
-| Transcription | `gpt-4o-mini-transcribe` | ~$0.003 per minute → about 3–4¢ for an 11-minute lecture |
+| Transcription | `gpt-transcribe` | check OpenAI's pricing page; the older `gpt-4o-mini-transcribe` was ~$0.003 per minute, about 3–4¢ for an 11-minute lecture |
 | Study notes (optional) | `gpt-5-mini` | well under 1¢ per lecture, and nothing when AI notes are off |
 | Ask (per question) | `gpt-5-mini` | well under 1¢ for an 11-minute lecture; each question re-sends the lecture as context, which OpenAI's automatic prompt caching discounts on follow-ups. The Ask footer shows the real token counts |
 
-These are the prices I last saw; check OpenAI's pricing page. Silent stretches aren't sent, so they cost nothing. You can switch to `gpt-4o-transcribe` (more accurate, about twice the price) or any chat model in Settings.
+These are the prices I last saw; check OpenAI's pricing page. Silent stretches aren't sent, so they cost nothing.
+
+**Transcription models.** OpenAI shuts down `gpt-4o-mini-transcribe`, `gpt-4o-transcribe` and `whisper-1` on **26 February 2027**. New setups use `gpt-transcribe`, OpenAI's current model. If Settings still names an older one, it shows a **Switch** button, and after that date TORU switches by itself.
 
 ## Your data
 
@@ -151,6 +169,11 @@ These are the prices I last saw; check OpenAI's pricing page. Silent stretches a
 | Bad or expired API key mid-recording | Recording continues and the audio is kept. Fix the key in Settings and it's sent automatically |
 | "Interrupted" | The browser closed or the extension reloaded mid-recording. Use Retry to finish what was captured |
 | Can't record a page | Chrome blocks its own pages (`chrome://`, Web Store). Normal web pages work |
+| "Nothing is playing in the recorded tab" | Play the video and check it isn't muted (in the player or on the tab) |
+| "Nothing was heard … so no note was saved" | The recording had no speech. Check the video's sound, then record again |
+| Test says OpenAI refused a transcription | Read the message. A language may not be accepted by that model: choose Auto-detect or another model |
+| A Sinhala (or other) lecture comes back in English letters or translated | Set the **Spoken language** for the project or in Settings; Auto-detect can mistake it |
+| The same sentences appear twice in an older note | On quiet audio the transcriber sometimes returned the context TORU gave it. New recordings drop that copied text |
 
 ## Development
 
@@ -190,6 +213,10 @@ side panel / library (React)
 ```
 
 The **Ask** tab talks to OpenAI directly from the page you're on (streamed chat completions, with a non-streaming fallback). Conversations are stored in the `messages` store (IndexedDB v2), keyed by note and turn number.
+
+### Transcription requests
+
+Each 15–30 s chunk is sent to `/v1/audio/transcriptions`. With `gpt-transcribe` the request carries `languages[]` (the chosen language, plus English when it's another language), `keywords[]` (the project's vocabulary) and a short `prompt` (the script to use and the last ~200 characters said). Older models get one `language`, with the vocabulary as a "Glossary" line in the prompt. Any sentence of the reply that copies the prompt is dropped (`src/lib/promptCopy.ts`). The language table is `src/lib/languages.ts`.
 
 | Path | What's there |
 |---|---|
