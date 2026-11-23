@@ -434,11 +434,16 @@ function useSearch(query: string): SearchResult[] | undefined {
     if (!query) return;
     let alive = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const run = () =>
-      searchNotes(query).then(
-        (r) => alive && latest.current === query && setResults(r),
+    const run = () => {
+      const t0 = performance.now();
+      return searchNotes(query).then(
+        (r) => {
+          console.debug(`[toru-measure] search ${Math.round(performance.now() - t0)} ms`); // TEMP: measurement
+          return alive && latest.current === query && setResults(r);
+        },
         (e) => console.error('[toru] search failed', e),
       );
+    };
     run();
     // Refresh when notes change (e.g. a live lecture gets new lines), at most every 400 ms.
     const unsubscribe = subscribe((e) => {
