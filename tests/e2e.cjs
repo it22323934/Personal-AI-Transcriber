@@ -3,9 +3,10 @@
 // OpenAI API. usage: npm run test:e2e   (CHROME_PATH overrides the browser path)
 const puppeteer = require('puppeteer-core');
 const fs = require('fs');
+const http = require('http');
 const path = require('path');
 
-const EXT = path.resolve(process.argv[2] || path.join(__dirname, '..', 'dist'));
+const EXT_SRC = path.resolve(process.argv[2] || path.join(__dirname, '..', 'dist'));
 const OUT = path.resolve(process.argv[3] || path.join(__dirname, '..', '.e2e-out'));
 const CHROME = process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -67,6 +68,13 @@ Microsoft Entra ID (formerly Azure Active Directory) is Azure’s cloud identity
 (async () => {
   fs.rmSync(OUT, { recursive: true, force: true });
   fs.mkdirSync(OUT, { recursive: true });
+  // Test-only copy of the extension with host access, so the mini player can be
+  // injected without the toolbar click a real user makes (automation can't click it).
+  const EXT = path.join(OUT, 'ext');
+  fs.cpSync(EXT_SRC, EXT, { recursive: true });
+  const manifest = JSON.parse(fs.readFileSync(path.join(EXT, 'manifest.json'), 'utf8'));
+  manifest.host_permissions = [...(manifest.host_permissions ?? []), '<all_urls>'];
+  fs.writeFileSync(path.join(EXT, 'manifest.json'), JSON.stringify(manifest, null, 2));
   const userDataDir = fs.mkdtempSync(path.join(OUT, 'profile-'));
   const browser = await puppeteer.launch({
     executablePath: CHROME,
@@ -151,6 +159,8 @@ Microsoft Entra ID (formerly Azure Active Directory) is Azure’s cloud identity
     await shot(panel, '10-sidepanel-idle');
 
     // ----------------------------------------------------- recording flow
+    // Creates the offscreen recorder and swaps in a synthetic audio stream and a mocked OpenAI.
+    async function prepareRecorder() {
     await sw.evaluate(() => chrome.offscreen.createDocument({ url: 'offscreen.html', reasons: ['USER_MEDIA'], justification: 'e2e test' }));
     const offTarget = await browser.waitForTarget((t) => t.url().endsWith('/offscreen.html'), { timeout: 10000 });
     const off = await offTarget.asPage();
@@ -203,6 +213,9 @@ Microsoft Entra ID (formerly Azure Active Directory) is Azure’s cloud identity
         return dest.stream;
       };
     });
+    return off;
+    }
+    const off = await prepareRecorder();
 
     const send = (msg) => sw.evaluate((m) => chrome.runtime.sendMessage(m), msg);
     const readDb = (store, key) => panel.evaluate((store, key) => new Promise((res) => {
@@ -308,6 +321,104 @@ Microsoft Entra ID (formerly Azure Active Directory) is Azure’s cloud identity
     const tabId = await sw.evaluate(async () => (await chrome.tabs.query({ active: true }))[0]?.id);
     const denied = await panel.evaluate((tabId) => chrome.runtime.sendMessage({ target: 'background', type: 'START', tabId, projectId: 'p-entra' }), tabId);
     check(denied && denied.ok === false, `START without permission fails cleanly: “${denied && denied.error}”`);
+
+    // ------------------------------------- mini player + "AI study notes" switch
+    const titles = {
+      1: '[SHARED] Entra ID Groups | learn.cantrill.io',
+      2: '[SHARED] Demo - Create and Manage Groups | learn.cantrill.io',
+    };
+    const server = http.createServer((req, res) => {
+      const n = (req.url.match(/lecture\/(\d+)/) || [])[1] || '1';
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(`<!doctype html><title>${titles[n]}</title>
+        <body style="margin:0;background:#101012;color:#ddd;font:15px system-ui">
+          <div style="height:620px;margin:20px;border-radius:8px;background:#23253a;display:grid;place-items:center;font-size:20px">▶ Lecture ${n}</div>
+          <a id="next" href="/lecture/2" style="margin:20px;color:#9cf">Complete and Continue</a>
+        </body>`);
+    });
+    await new Promise((r) => server.listen(0, '127.0.0.1', r));
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const lecture = await browser.newPage();
+    await lecture.setViewport({ width: 1280, height: 760, deviceScaleFactor: 1 });
+    await lecture.goto(`${base}/lecture/1`);
+    const lectureTabId = await sw.evaluate(async (u) => (await chrome.tabs.query({})).find((t) => t.url && t.url.startsWith(u))?.id, base);
+
+    // This run's default: AI study notes off.
+    await panel.evaluate(() => new Promise((res) => {
+      const r = indexedDB.open('toru', 1);
+      r.onsuccess = () => {
+        const os = r.result.transaction('meta', 'readwrite').objectStore('meta');
+        const g = os.get('settings');
+        g.onsuccess = () => os.put({ key: 'settings', value: { ...g.result.value, autoSummarize: false } });
+        os.transaction.oncomplete = res;
+      };
+    }));
+
+    const inMini = (fn, arg) => lecture.evaluate((fnSrc, arg) => {
+      const host = document.querySelector('toru-mini');
+      if (!host) return null;
+      return new Function('root', 'arg', fnSrc)(host.shadowRoot, arg);
+    }, fn, arg);
+    const miniClick = (act) => inMini('root.querySelector(\'[data-act="\' + arg + \'"]\').click(); return true;', act);
+
+    const off2 = await prepareRecorder();
+    const s2 = await send({ target: 'offscreen', type: 'START', streamId: 'fake', tabId: lectureTabId, projectId: 'p-entra', title: titles[1], url: `${base}/lecture/1` });
+    check(s2 && s2.ok, 'recording started on a real web page');
+    const g1 = s2.noteId;
+    check((await readDb('notes', g1)).autoSummary === false, 'new recording takes the “AI study notes” default (off)');
+    const shown = await panel.evaluate(() => chrome.runtime.sendMessage({ target: 'background', type: 'SHOW_MINI' }));
+    check(shown && shown.ok, `mini player injected (${JSON.stringify(shown)})`);
+    check((await readDb('meta', 'settings')).value.recordingView === 'mini', 'mini player view is remembered');
+    await sleep(1500);
+    check((await inMini('return root.querySelector(\'[data-el="title"]\').textContent;')) === 'Entra ID Groups', 'mini player is on the page, showing the lecture');
+    await shot(lecture, '14-mini-collapsed');
+
+    console.log('… recording 18 s with the mini player');
+    await sleep(18000);
+    await miniClick('toggle');
+    await sleep(600);
+    const rows = await inMini('return root.querySelectorAll(".row").length;');
+    check(rows >= 1, `clicking the mini player shows the live transcript (${rows} lines)`);
+    check((await inMini('return root.querySelector(\'[data-el="summary"]\').checked;')) === false, 'mini player shows the AI notes switch (off)');
+    await shot(lecture, '15-mini-expanded');
+    await panel.setViewport({ width: 400, height: 900, deviceScaleFactor: 1 });
+    await shot(panel, '16-sidepanel-recording-controls');
+
+    await miniClick('pause');
+    await sleep(700);
+    check((await readDb('meta', 'recording')).value.paused === true, 'pause from the mini player');
+    await miniClick('pause');
+    await sleep(700);
+    check((await readDb('meta', 'recording')).value.paused === false, 'resume from the mini player');
+
+    // "Complete and Continue": new note, and the mini player comes back on the new page.
+    await Promise.all([lecture.waitForNavigation(), lecture.click('#next')]);
+    await sleep(4500);
+    const nextTitle = await inMini('return root.querySelector(\'[data-el="title"]\').textContent;');
+    check(nextTitle === 'Demo - Create and Manage Groups', `mini player re-appears on the next lecture (“${nextTitle}”)`);
+    const doneG1 = await readDb('notes', g1);
+    const chatsSoFar = (await off2.evaluate(() => window.__calls)).filter((c) => c.kind === 'chat').length;
+    check(doneG1.status === 'done' && !doneG1.summary && chatsSoFar === 0, `AI notes off: lecture saved with no summary request (status ${doneG1.status}, ${chatsSoFar} summary calls)`);
+    const g2 = (await readDb('meta', 'recording')).value.noteId;
+    check(g2 !== g1 && (await readDb('notes', g2)).autoSummary === false, 'the next lecture inherits the AI notes choice');
+    await inMini('root.querySelector(\'[data-el="summary"]\').click(); return true;');
+    await sleep(700);
+    check((await readDb('notes', g2)).autoSummary === true, 'AI notes switched on for this lecture from the mini player');
+
+    console.log('… recording 17 s into the next lecture');
+    await sleep(17000);
+    await miniClick('stop');
+    await sleep(6500);
+    const doneG2 = await readDb('notes', g2);
+    check(doneG2.status === 'done' && !!doneG2.summary, 'AI notes on: summary written after stopping from the mini player');
+    const result = await inMini('return root.querySelector(\'[data-el="done-title"]\').textContent + " · " + root.querySelector(\'[data-el="done-sub"]\').textContent;');
+    check(result === 'Saved to Entra ID · Study notes ready', `mini player shows how the lecture was saved (“${result}”)`);
+    await shot(lecture, '17-mini-done');
+    await miniClick('open');
+    await sleep(1500);
+    const libUrls = await sw.evaluate(async () => (await chrome.tabs.query({})).map((t) => t.url).filter((u) => u && u.includes('library.html')));
+    check(libUrls.some((u) => u.endsWith(`#/note/${g2}`)), 'Open notes opens that lecture in the library');
+    server.close();
   } catch (e) {
     failures++;
     console.error('ERROR', e);
