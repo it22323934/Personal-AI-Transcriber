@@ -11,15 +11,16 @@ export interface AskJob {
 
 const jobs = new Map<string, AskJob>();
 const listeners = new Set<() => void>();
-let frame = 0;
+let pending: ReturnType<typeof setTimeout> | undefined;
 
 function notify() {
-  // Stream deltas arrive many times a second; repaint at most once per frame.
-  if (frame) return;
-  frame = requestAnimationFrame(() => {
-    frame = 0;
+  // Stream deltas arrive many times a second; repaint ~30x a second at most.
+  // (A timer rather than requestAnimationFrame, which stops in background tabs.)
+  if (pending !== undefined) return;
+  pending = setTimeout(() => {
+    pending = undefined;
     for (const l of listeners) l();
-  });
+  }, 33);
 }
 
 export function startAsk(noteId: string, question?: string): void {

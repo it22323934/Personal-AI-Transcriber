@@ -11,6 +11,10 @@ When the recorded tab moves to the next lecture (e.g. "Complete and Continue"), 
 
 To focus on the lecture, close the side panel and follow along in the **mini player**: a small bar on the lecture page. Click it to see the live transcript.
 
+Afterwards, **Ask** questions about any lecture ("Quiz me", "Explain this simply", or anything else). Follow-up questions remember the conversation.
+
+TORU follows your system's **light or dark** theme, or the one you pick in Settings.
+
 Everything runs locally in your browser. Nothing is published, and the only server it talks to is `api.openai.com`, using your own key.
 
 ---
@@ -37,7 +41,7 @@ You don't need the Chrome Web Store. An unpacked extension stays installed acros
 
 1. Click the TORU icon to open the side panel, then the **settings** icon (top right).
 2. Paste your OpenAI API key and press **Test**, then **Save settings**.
-3. Click **+** next to "Save to" and create a project, e.g. **Entra ID**. Fill in
+3. Open the **Save to** dropdown, choose **New project…** and create one, e.g. **Entra ID**. Fill in
    - **What is it about?**: "AZ-104 Azure Administrator — identity section" (gives the AI context)
    - **Vocabulary**: "Entra ID, tenant, RBAC, Conditional Access, PIM, B2B" (helps the transcriber spell jargon)
 
@@ -85,12 +89,30 @@ The book icon in the panel opens the full-page library:
 - **Notes**: summary, timestamped transcript and your own notes. You can rename, move to another project, copy or download as Markdown, regenerate the summary, or delete.
 - **Search**: searches titles, summaries, your notes and full transcripts.
 
+### Ask: a conversation about a lecture
+
+Every note has an **Ask** tab, in the side panel and in the library:
+
+- Start with a suggestion (**Explain the main idea simply**, **What should I remember for the exam?**, **Quiz me, one question at a time**, **Give me a real-world example**) or type your own question. Press Enter to send and Shift+Enter for a new line.
+- Answers are based on that lecture's transcript, study notes and your own notes, and cite times like **[4:20]** so you can find the moment in the Transcript tab. If the lecture doesn't cover something, the answer says so before adding general knowledge under "Beyond the lecture".
+- Follow-up questions carry the conversation. **Quiz me** asks one question at a time and gives feedback on your answer.
+- Answers appear as they're written. **Stop** keeps what's there so far; **Try again** retries one that failed.
+- Conversations are saved with the note and included in **Download .md**, **Copy as Markdown** and backups. **Clear chat** deletes one.
+- You can ask while a lecture is still recording; answers use the transcript so far.
+
+It uses the model set under **Settings → Study notes and questions** (default `gpt-5-mini`).
+
+### Appearance
+
+**Settings → Appearance**: **System** (default) follows Windows' light or dark mode and switches with it; **Light** and **Dark** override it. The side panel, library and mini player all follow the choice.
+
 ## Costs (your OpenAI account)
 
 | Part | Default model | Roughly |
 |---|---|---|
 | Transcription | `gpt-4o-mini-transcribe` | ~$0.003 per minute → about 3–4¢ for an 11-minute lecture |
 | Study notes (optional) | `gpt-5-mini` | well under 1¢ per lecture, and nothing when AI notes are off |
+| Ask (per question) | `gpt-5-mini` | well under 1¢ for an 11-minute lecture; each question re-sends the lecture as context, which OpenAI's automatic prompt caching discounts on follow-ups |
 
 These are the prices I last saw; check OpenAI's pricing page. Silent stretches aren't sent, so they cost nothing. You can switch to `gpt-4o-transcribe` (more accurate, about twice the price) or any chat model in Settings.
 
@@ -147,6 +169,8 @@ side panel / library (React)
         ▼
    IndexedDB  ◄── shared by every context; changes broadcast over a BroadcastChannel
 ```
+
+The **Ask** tab talks to OpenAI directly from the page you're on (streamed chat completions, with a non-streaming fallback). Conversations are stored in the `messages` store (IndexedDB v2), keyed by note and turn number.
 
 | Path | What's there |
 |---|---|
