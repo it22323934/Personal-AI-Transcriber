@@ -1,0 +1,48 @@
+// Typed chrome.runtime messages. Every context receives every message, so
+// each one carries a `target` and listeners ignore messages not meant for them.
+import { sleep } from './format';
+
+export type BackgroundRequest =
+  | { type: 'START'; tabId: number; projectId: string }
+  | { type: 'GET_STATE' }
+  | { type: 'RECORDING_CHANGED' }
+  | { type: 'OFFSCREEN_IDLE' };
+
+export type OffscreenRequest =
+  | { type: 'START'; streamId: string; tabId: number; projectId: string; title: string; url: string }
+  | { type: 'STOP' }
+  | { type: 'PAUSE' }
+  | { type: 'RESUME' }
+  | { type: 'ROLLOVER'; title: string; url: string }
+  | { type: 'PING' };
+
+export interface Reply {
+  ok: boolean;
+  error?: string;
+  [key: string]: unknown;
+}
+
+export async function callBackground<T = Reply>(msg: BackgroundRequest): Promise<T> {
+  const reply = (await chrome.runtime.sendMessage({ target: 'background', ...msg })) as Reply | undefined;
+  if (!reply) throw new Error('Earmark’s background service didn’t respond. Try reloading the extension.');
+  if (!reply.ok) throw new Error(reply.error ?? 'Something went wrong.');
+  return reply as T;
+}
+
+/** Sends to the offscreen recorder. Retries briefly while it's still loading. */
+export async function callOffscreen<T = Reply>(msg: OffscreenRequest, retries = 0): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    let reply: Reply | undefined;
+    try {
+      reply = (await chrome.runtime.sendMessage({ target: 'offscreen', ...msg })) as Reply | undefined;
+    } catch {
+      reply = undefined; // "Receiving end does not exist"
+    }
+    if (reply) {
+      if (!reply.ok) throw new Error(reply.error ?? 'Something went wrong.');
+      return reply as T;
+    }
+    if (attempt >= retries) throw new Error('The recorder isn’t running.');
+    await sleep(150);
+  }
+}

@@ -1,0 +1,123 @@
+.sp {
+  min-height: 100vh;
+}
+
+.sp-top {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: rgba(17, 17, 15, 0.9);
+  backdrop-filter: blur(12px);
+}
+.sp-top.is-recording {
+  border-bottom: 1px solid var(--line);
+}
+
+.sp-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 10px 10px 16px;
+}
+
+.sp-body {
+  display: grid;
+  gap: 20px;
+  padding: 10px 16px 48px;
+}
+
+.recorder {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+}
+
+.source {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.favicon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--surface-active);
+  color: var(--text-3);
+}
+.source-title {
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+.source-host {
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.hint {
+  margin: -6px 0 0;
+  font-size: 12px;
+  color: var(--text-3);
+  text-align: center;
+}
+
+.rec-bar {
+  display: grid;
+  gap: 10px;
+  padding: 0 16px 12px;
+}
+.rec-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+.rec-time {
+  font-size: 14px;
+  color: var(--text-2);
+}
+
+.link-btn {
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--lime);
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.list-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+.list-title {
+  margin: 0;
+  font-size: 26px;
+  line-height: 1.1;
+}
+
+.back {
+  margin: 0 0 0 -12px;
+}
+
+.recorder-compact {
+  gap: 10px;
+  padding: 10px;
+  border-radius: var(--radius);
+}
+.recorder-compact .btn {
+  flex: none;
+}
+
+/* Let grid tracks shrink below their content's min width (long project names, tab titles). */
+.sp-body,
+.recorder,
+.rec-bar {
+  grid-template-columns: minmax(0, 1fr);
+}

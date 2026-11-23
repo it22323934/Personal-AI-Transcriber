@@ -1,0 +1,48 @@
+{
+  "manifest_version": 3,
+  "name": "Earmark — Lecture Notes",
+  "short_name": "Earmark",
+  "version": "0.1.0",
+  "description": "Record a tab’s audio, get a live transcript and AI study notes, organised into projects.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA21YcTugCfQGflzte8N6fpPaMKYBLv72ROKAfesMfk5uNbeqOPREU+XnWIin5bR27YZjecAWalJ9oCIo+eH5FYo4535+UFfaRblxyRWba8N7hvWPSr8RrXuzaK0z27KMiBhbxVcc9I/jmLRdMwC9C0WekAbp2ILzc+CqKDDxoz4FHs7uYK5laQJ01VLPTOa+BvER2GjgWTKVtDH7vxxNFt0gUJi8UvIt/D5qG4WB0rW8qFot1Y1/EWIKn5BVq/spRXUiXhuWZJGxBFBD5a+SOLcIY9jW40LNZkEPbkjPS2U66/4MwrYt/8BAbIHkQjKAtbqj779MSjV3oy0If80BM1QIDAQAB",
+  "minimum_chrome_version": "116",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "Open Earmark",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png"
+    }
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "permissions": [
+    "sidePanel",
+    "tabCapture",
+    "offscreen",
+    "tabs",
+    "contextMenus",
+    "unlimitedStorage"
+  ],
+  "host_permissions": [
+    "https://api.openai.com/*"
+  ],
+  "commands": {
+    "toggle-recording": {
+      "suggested_key": {
+        "default": "Alt+Shift+R"
+      },
+      "description": "Start or stop recording the current tab"
+    }
+  }
+}

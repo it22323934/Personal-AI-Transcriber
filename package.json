@@ -1,0 +1,29 @@
+{
+  "name": "earmark",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Chrome side-panel extension that records a tab's audio, transcribes it with OpenAI and writes AI study notes, organised into projects.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite build --watch --mode development",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "icons": "node scripts/gen-icons.mjs",
+    "test:e2e": "npm run build && node tests/e2e.cjs"
+  },
+  "dependencies": {
+    "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource-variable/newsreader": "^5.3.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.3.7",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^4.7.0",
+    "puppeteer-core": "^25.18.1",
+    "typescript": "^5.9.3",
+    "vite": "^6.4.6"
+  }
+}
