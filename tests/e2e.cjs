@@ -465,6 +465,7 @@ Microsoft Entra ID (formerly Azure Active Directory) is Azure’s cloud identity
     check((await readDb('meta', 'recording')).value.paused === false, 'resume from the mini player');
 
     // "Complete and Continue": new note, and the mini player comes back on the new page.
+    await lecture.bringToFront(); // real mouse/keyboard input only reaches the visible tab
     await Promise.all([lecture.waitForNavigation(), lecture.click('#next')]);
     await sleep(4500);
     const nextTitle = await inMini('return root.querySelector(\'[data-el="title"]\').textContent;');
@@ -542,6 +543,7 @@ Microsoft Entra ID (formerly Azure Active Directory) is Azure’s cloud identity
     const askRequests = () => lib.evaluate(() => window.__chat.requests);
     const setMode = (mode) => lib.evaluate((mode) => (window.__chat.mode = mode), mode);
 
+    await lib.bringToFront(); // the chat is typed into
     await clickTab('Ask');
     await sleep(300);
     const suggestions = await lib.evaluate(() => [...document.querySelectorAll('.chat-suggestion')].map((b) => b.textContent));
@@ -610,6 +612,7 @@ Microsoft Entra ID (formerly Azure Active Directory) is Azure’s cloud identity
     await shot(lib, '21-light-note-summary');
     await panel.setViewport({ width: 400, height: 900, deviceScaleFactor: 1 });
     await shot(panel, '22-light-sidepanel');
+    await lib.bringToFront(); // Settings is driven with the mouse and keyboard next
 
     await lib.evaluate(() => [...document.querySelectorAll('.nav-item')].find((b) => b.textContent.includes('Settings')).click());
     await sleep(400);
