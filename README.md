@@ -4,10 +4,12 @@ A Chrome side-panel extension. Play a video in a tab, press **Start recording**,
 
 1. captures **only that tab's audio** (you keep hearing it),
 2. transcribes it live with OpenAI (new lines every 15–30 seconds),
-3. writes **study notes** when you stop: TL;DR, key concepts, how it works, things worth remembering and self-test questions,
+3. writes AI **study notes** when you stop, if you want them: TL;DR, key concepts, how it works, things worth remembering and self-test questions,
 4. files everything under a **project** (e.g. "Entra ID"), with your own notes alongside.
 
 When the recorded tab moves to the next lecture (e.g. "Complete and Continue"), TORU finishes the current note and starts a new one automatically.
+
+To focus on the lecture, close the side panel and follow along in the **mini player**: a small bar on the lecture page. Click it to see the live transcript.
 
 Everything runs locally in your browser. Nothing is published, and the only server it talks to is `api.openai.com`, using your own key.
 
@@ -42,18 +44,38 @@ You don't need the Chrome Web Store. An unpacked extension stays installed acros
 ## Recording a lecture
 
 1. Go to the tab with the video and **click the TORU toolbar icon on that tab**. Chrome only lets an extension capture a tab after you invoke it there.
-2. Pick the project and press **Start recording**, then play the video.
+2. Pick the project, choose whether you want **AI study notes when I stop**, and press **Start recording**. Then play the video.
 3. Watch the transcript fill in. Jot anything in **My notes**; the AI makes sure your points are covered.
-4. Press **Stop**. The study notes appear in **Summary** a few seconds later.
+4. Press **Stop**. If AI notes are on, the study notes appear in **Summary** a few seconds later.
+
+### AI study notes: on or off
+
+Each summary is a request to OpenAI on your account, so it's your choice:
+
+- The **AI study notes when I stop** switch on the recorder sets the default. TORU remembers it, and it's also in Settings.
+- **While recording**, the same switch (in the side panel or the mini player) changes it for the current lecture only. When TORU moves on to the next lecture, the new note keeps your choice.
+- With it off you still get the full transcript. You can write notes for any lecture later with **Write study notes** on its Summary tab.
+
+### Side panel or mini player
+
+You don't need to keep TORU open. Closing the side panel never stops a recording; the toolbar icon shows **REC** (or **II** when paused).
+
+To keep an eye on it without the panel, press **Mini player** in the panel while recording. The panel closes and a small bar appears at the bottom right of the lecture page:
+
+- **Click the bar** to show or hide the live transcript, and the AI-notes switch.
+- **Pause** and **Stop** work right there.
+- **Drag** it by the dotted handle; it remembers where you put it.
+- The **panel icon** in the expanded view switches back to the side panel.
+- It follows you to the next lecture, and when you stop it shows "Saved to Entra ID · Study notes ready" with an **Open notes** button.
+
+TORU remembers the view you used last, so the next recording starts in it. You can also set it in **Settings → While recording**. The mini player lives on the page, so it's hidden while the video is in full screen. The recording and transcript carry on regardless.
 
 Other ways to start or stop:
 
 - **Alt+Shift+R** on the tab. You can change this at `chrome://extensions/shortcuts`.
 - **Right-click the page → "TORU: start or stop recording this tab"**.
 
-If you see *"Chrome needs your OK for this tab first"*, use one of these two. They always grant permission for the tab.
-
-The toolbar icon shows **REC** while recording and **II** while paused. Closing the side panel doesn't stop the recording.
+If you see *"Chrome needs your OK for this tab first"*, use one of these two. They always grant permission for the tab. With the mini player view selected, the shortcut starts recording straight into the mini player without opening the panel.
 
 ## The library
 
@@ -68,7 +90,7 @@ The book icon in the panel opens the full-page library:
 | Part | Default model | Roughly |
 |---|---|---|
 | Transcription | `gpt-4o-mini-transcribe` | ~$0.003 per minute → about 3–4¢ for an 11-minute lecture |
-| Study notes | `gpt-5-mini` | well under 1¢ per lecture |
+| Study notes (optional) | `gpt-5-mini` | well under 1¢ per lecture, and nothing when AI notes are off |
 
 These are the prices I last saw; check OpenAI's pricing page. Silent stretches aren't sent, so they cost nothing. You can switch to `gpt-4o-transcribe` (more accurate, about twice the price) or any chat model in Settings.
 
@@ -97,7 +119,7 @@ npm run typecheck
 npm run test:e2e   # builds, loads dist/ into your Chrome (throwaway profile) and runs the end-to-end suite
 ```
 
-The end-to-end test seeds data, screenshots every view into `.e2e-out/`, then runs a full recording: live chunks, pause/resume, auto-split on navigation, summaries, stop and clean-up. It uses a synthetic audio stream and a mocked OpenAI API, so it costs nothing. Set `CHROME_PATH` if Chrome is installed somewhere else.
+The end-to-end test seeds data, screenshots every view into `.e2e-out/`, then runs full recordings: live chunks, pause/resume, auto-split on navigation, summaries on and off, the mini player on a real web page (expand, pause, AI-notes switch, re-appearing on the next lecture, stop), and clean-up. It uses a synthetic audio stream and a mocked OpenAI API, so it costs nothing. Set `CHROME_PATH` if Chrome is installed somewhere else.
 
 ### How it fits together
 
@@ -107,12 +129,14 @@ side panel / library (React)
         │                         • tabCapture.getMediaStreamId (needs the tab permission)
         │                         • creates/closes the offscreen recorder
         │                         • auto-split on navigation, REC badge, shortcut, context menu
+        │                         • injects the mini player (widget.js) into the recorded page
         │                                   │
         │  STOP / PAUSE ───────►  offscreen document (recorder)
         │                         • plays the tab audio back so you still hear it
         │                         • AudioWorklet → 16 kHz mono WAV chunks, cut at pauses (15–30 s)
         │                         • queue → OpenAI transcription → segments
-        │                         • on stop: OpenAI chat → study notes
+        │                         • on stop: OpenAI chat → study notes (if switched on)
+        │                         • pushes live state to the mini player over a port
         ▼
    IndexedDB  ◄── shared by every context; changes broadcast over a BroadcastChannel
 ```
@@ -124,6 +148,7 @@ side panel / library (React)
 | `src/lib/` | Data store, OpenAI client, pipeline, audio encoding, prompts, export |
 | `src/ui/` | Design system (`styles.css`), shared components, Markdown renderer |
 | `src/sidepanel/`, `src/library/` | The two pages |
+| `src/widget/` | The on-page mini player (content script, no framework) |
 | `public/` | `manifest.json`, icons, the audio worklet |
 | `tests/e2e.cjs` | End-to-end suite |
 
