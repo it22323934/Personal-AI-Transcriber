@@ -26,7 +26,7 @@ export type MiniCommand =
 
 export interface MiniSnapshot {
   type: 'snapshot';
-  recording: { paused: boolean; elapsedMs: number; runningSince: number | null } | null;
+  recording: { paused: boolean; elapsedMs: number; runningSince: number | null; quiet?: boolean } | null;
   note: {
     id: string;
     title: string;

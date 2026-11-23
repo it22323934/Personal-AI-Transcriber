@@ -209,7 +209,7 @@ Microsoft Entra ID (formerly Azure Active Directory) is Azure’s cloud identity
           const f = init.body;
           const file = f.get('file');
           const header = new TextDecoder().decode(await file.slice(0, 4).arrayBuffer());
-          window.__calls.push({ kind: 'transcribe', size: file.size, header, model: f.get('model'), prompt: f.get('prompt'), language: f.get('language'), auth: init.headers.Authorization });
+          window.__calls.push({ kind: 'transcribe', size: file.size, header, model: f.get('model'), prompt: f.get('prompt'), language: f.get('language'), languages: f.getAll('languages[]'), keywords: f.getAll('keywords[]'), auth: init.headers.Authorization });
           await new Promise((r) => setTimeout(r, 300));
           return new Response(JSON.stringify({ text: lines[n++ % lines.length] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
         }
@@ -271,8 +271,8 @@ Microsoft Entra ID (formerly Azure Active Directory) is Azure’s cloud identity
     const calls = await off.evaluate(() => window.__calls);
     const tcalls = calls.filter((c) => c.kind === 'transcribe');
     check(tcalls.every((c) => c.header === 'RIFF' && c.size > 400_000 && c.size < 1_100_000), `chunks are WAV, 15–30 s long (${tcalls.map((c) => Math.round(c.size / 32000) + 's').join(', ')})`);
-    check(tcalls.every((c) => c.model === 'gpt-4o-mini-transcribe' && c.language === 'en' && c.auth === 'Bearer sk-test-1234567890'), 'transcription uses model, project language and API key');
-    check(tcalls[0].prompt.includes('Glossary: Entra ID'), 'project vocabulary sent as transcription prompt');
+    check(tcalls.every((c) => c.model === 'gpt-transcribe' && c.languages.join() === 'en' && c.language === null && c.auth === 'Bearer sk-test-1234567890'), 'transcription uses gpt-transcribe, the project language and the API key');
+    check(tcalls[0].keywords.includes('Entra ID') && tcalls[0].keywords.includes('Conditional Access') && !(tcalls[0].prompt || '').includes('Glossary'), 'project vocabulary sent as keywords');
     check(!tcalls[1] || tcalls[1].prompt.includes('user identities'), 'previous text carried into next chunk prompt');
     const durMs = (await readDb('notes', note1)).durationMs;
     check(durMs > 14000, `note duration tracked (${Math.round(durMs / 1000)} s)`);
@@ -313,6 +313,23 @@ Microsoft Entra ID (formerly Azure Active Directory) is Azure’s cloud identity
     check((await sw.evaluate(() => chrome.action.getBadgeText({}))) === '', 'badge cleared');
     segs = await segmentsOf(note2);
     check(segs.length >= 1, `second note has transcript (${segs.length} segments)`);
+
+    // A recording where the tab plays nothing: warned about while recording, explained when it stops.
+    await panel.evaluate(() => localStorage.setItem('toru-test-quiet-ms', '3000'));
+    const offQuiet = await prepareRecorder();
+    await offQuiet.evaluate(() => {
+      navigator.mediaDevices.getUserMedia = async () => new AudioContext().createMediaStreamDestination().stream; // silence
+    });
+    const quietStart = await send({ target: 'offscreen', type: 'START', streamId: 'fake', tabId: 424243, projectId: 'p-entra', title: 'A paused video', url: 'https://example.com/paused' });
+    await sleep(5500);
+    check((await readDb('meta', 'recording'))?.value?.quiet === true, 'a tab that plays nothing is flagged while recording');
+    await panel.waitForFunction(() => document.body.textContent.includes('Nothing is playing in the recorded tab'), { timeout: 5000 }).then(() => check(true, 'the side panel says nothing is playing'), () => check(false, 'the side panel says nothing is playing'));
+    await shot(panel, '13b-sidepanel-quiet');
+    await send({ target: 'offscreen', type: 'STOP' });
+    await panel.waitForFunction(() => document.body.textContent.includes('Nothing was heard in'), { timeout: 10000 }).then(() => check(true, 'a silent recording says why no note was saved'), () => check(false, 'a silent recording says why no note was saved'));
+    check(!(await readDb('notes', quietStart.noteId)), 'the empty note was not kept');
+    await panel.evaluate(() => localStorage.removeItem('toru-test-quiet-ms'));
+    await sleep(1500);
 
     await panel.evaluate((id) => {
       const row = [...document.querySelectorAll('.note-row')].find((r) => r.textContent.includes('Entra ID User Identities'));

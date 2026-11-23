@@ -3,6 +3,7 @@
 import * as db from './db';
 import { emit } from './events';
 import { DEFAULT_SUMMARY_PROMPT } from './prompts';
+import { RECOMMENDED_TRANSCRIBE_MODEL } from './transcribeModels';
 import type { ChatMessage, Note, PendingChunk, Project, RecordingState, Segment, Settings } from './types';
 
 export const INBOX_ID = 'inbox';
@@ -11,9 +12,10 @@ export const PROJECT_COLORS = ['#c9dc4c', '#7cc4e8', '#f0a07c', '#b9a3f0', '#e8c
 
 export const DEFAULT_SETTINGS: Settings = {
   apiKey: '',
-  transcribeModel: 'gpt-4o-mini-transcribe',
+  transcribeModel: RECOMMENDED_TRANSCRIBE_MODEL,
   summaryModel: 'gpt-5-mini',
   language: '',
+  notesLanguage: 'en',
   autoSummarize: true,
   autoSplit: true,
   recordingView: 'panel',

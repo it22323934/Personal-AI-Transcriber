@@ -64,7 +64,7 @@ export function NoteView(props: {
       <>
         {props.back}
         <div className="empty">
-          <h3>This note was deleted</h3>
+          <h3>This note isn’t here any more</h3>
         </div>
       </>
     );

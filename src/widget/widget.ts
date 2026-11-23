@@ -31,7 +31,7 @@ import type { MiniCommand, MiniMessage, MiniSnapshot } from '../lib/messages';
     --text: #ecebe3; --text2: #b3b1a5; --text3: #7c7a70; --lime: #cfe05b; --meter: #cfe05b; --olive: #5d7113; --olive-hover: #6b8217; --olive-text: #f5f8e6; --red: #f2555a;
     --strong-hover: #ffffff; --lime-soft: rgba(207,224,91,.14); --scroll: rgba(236,234,222,.15); --shadow: rgba(0,0,0,.45);
     display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
-    font: 400 13px/1.5 'Inter Variable', Inter, 'Segoe UI', system-ui, sans-serif; color: var(--text);
+    font: 400 13px/1.5 'Inter Variable', Inter, 'Segoe UI', 'Nirmala UI', 'Noto Sans Sinhala', 'Iskoola Pota', 'Noto Sans Tamil', 'Noto Sans', system-ui, sans-serif; color: var(--text);
     -webkit-font-smoothing: antialiased;
   }
   .mini.light {
@@ -86,12 +86,13 @@ import type { MiniCommand, MiniMessage, MiniSnapshot } from '../lib/messages';
   .sheet-head { display: flex; align-items: flex-start; gap: 8px; padding: 14px 10px 10px 16px; border-bottom: 1px solid var(--line); }
   .sheet-head .grow { flex: 1; min-width: 0; }
   .eyebrow { font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text3); }
-  .title { margin: 3px 0 0; font: 400 19px/1.2 'Newsreader Variable', Georgia, 'Times New Roman', serif; letter-spacing: -.01em; color: var(--text); }
+  .title { margin: 3px 0 0; font: 400 19px/1.2 'Newsreader Variable', Georgia, 'Times New Roman', 'Nirmala UI', 'Noto Sans Sinhala', 'Iskoola Pota', 'Noto Sans', serif; letter-spacing: -.01em; color: var(--text); }
   .transcript { flex: 1; overflow-y: auto; padding: 8px 16px 10px; scrollbar-width: thin; scrollbar-color: var(--scroll) transparent; }
   .row { display: grid; grid-template-columns: 38px 1fr; gap: 8px; padding: 6px 0; }
   .ts { font: 11px/1.9 ui-monospace, Consolas, monospace; color: var(--text3); }
   .txt { line-height: 1.6; }
   .hint { color: var(--text3); font-size: 12px; padding: 10px 0 4px; display: flex; align-items: center; gap: 8px; }
+  .hint.warn { color: #e8b45a; font-weight: 500; }
   .sheet-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px 12px 16px; border-top: 1px solid var(--line); }
   .switch { display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 12.5px; color: var(--text2); }
   .switch input { appearance: none; position: relative; width: 30px; height: 18px; margin: 0; border-radius: 999px; background: var(--hover); border: 1px solid var(--line2); cursor: pointer; flex: none; }
@@ -270,7 +271,11 @@ import type { MiniCommand, MiniMessage, MiniSnapshot } from '../lib/messages';
   function renderHint(s: MiniSnapshot) {
     let text = '';
     let spinning = false;
-    if (s.recording) {
+    const quiet = !!s.recording && !s.recording.paused && !!s.recording.quiet;
+    hint.classList.toggle('warn', quiet);
+    if (quiet) {
+      text = 'Nothing is playing in this tab. Is the video playing, and not muted?';
+    } else if (s.recording) {
       text = s.recording.paused
         ? 'Paused.'
         : rows.size
@@ -394,7 +399,19 @@ import type { MiniCommand, MiniMessage, MiniSnapshot } from '../lib/messages';
       ok: boolean;
       note: { status: string; hasSummary: boolean; projectName: string; error?: string } | null;
     }>({ type: 'NOTE_STATUS', noteId });
-    if (!reply?.ok || !reply.note) return destroy(); // deleted (e.g. nothing was said) or extension gone
+    if (reply?.ok && !reply.note) {
+      // The recorder deleted it because nothing was said: say so rather than vanishing.
+      snap = { ...snap!, recording: null, pending: 0, segments: [] };
+      render();
+      els.doneTitle.textContent = 'Nothing was saved';
+      els.doneSub.textContent = 'Nothing was heard in this recording.';
+      (root.querySelector('[data-act="open"]') as HTMLElement | null)?.setAttribute('hidden', '');
+      hint.remove();
+      clearTimeout(closeTimer);
+      closeTimer = setTimeout(destroy, 12_000);
+      return;
+    }
+    if (!reply?.ok || !reply.note) return destroy(); // extension gone
     snap = { ...snap!, recording: null, pending: 0, segments: [] };
     render();
     renderDone(reply.note.status, reply.note.hasSummary, reply.note.projectName, !!snap.note?.autoSummary, reply.note.error);

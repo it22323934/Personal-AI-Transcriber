@@ -3,7 +3,7 @@ import { errorMessage } from '../../lib/format';
 import * as store from '../../lib/store';
 import type { Project } from '../../lib/types';
 import { toast } from '../toast';
-import { LANGUAGES } from './languages';
+import { languageOptions } from '../../lib/languages';
 import { Modal, useConfirm } from './Modal';
 import { Select } from './Select';
 
@@ -21,6 +21,7 @@ export function ProjectModal(props: {
   const [vocabulary, setVocabulary] = useState(editing?.vocabulary ?? '');
   const [language, setLanguage] = useState(editing?.language ?? '');
   const [summaryPrompt, setSummaryPrompt] = useState(editing?.summaryPrompt ?? '');
+  const [notesLanguage, setNotesLanguage] = useState(editing?.notesLanguage ?? '');
   const [color, setColor] = useState(editing?.color ?? '');
   const [advanced, setAdvanced] = useState(!!editing?.summaryPrompt);
   const [saving, setSaving] = useState(false);
@@ -36,6 +37,7 @@ export function ProjectModal(props: {
         vocabulary: vocabulary.trim(),
         language,
         summaryPrompt: summaryPrompt.trim(),
+        notesLanguage,
         ...(color ? { color } : {}),
       };
       if (editing) {
@@ -131,8 +133,9 @@ export function ProjectModal(props: {
               id="plang"
               ariaLabel="Spoken language"
               value={language}
-              options={LANGUAGES.map(([code, label]) => ({ value: code, label: code ? label : 'Use default' }))}
+              options={languageOptions([{ value: '', label: 'Use default' }])}
               onChange={setLanguage}
+              listMinWidth={280}
             />
           </div>
           {!isInbox && (
@@ -152,6 +155,20 @@ export function ProjectModal(props: {
               </div>
             </div>
           )}
+        </div>
+        <div className="field">
+          <label htmlFor="pnotes">Write study notes in</label>
+          <Select
+            id="pnotes"
+            ariaLabel="Write study notes in"
+            value={notesLanguage}
+            options={languageOptions([
+              { value: '', label: 'Use default', description: 'The choice in Settings' },
+              { value: 'spoken', label: 'The language of the lecture' },
+            ])}
+            onChange={setNotesLanguage}
+            listMinWidth={280}
+          />
         </div>
         {advanced ? (
           <div className="field">

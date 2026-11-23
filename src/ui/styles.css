@@ -51,8 +51,12 @@
   --backdrop: rgba(6, 6, 5, 0.66);
   --shadow-pop: 0 18px 48px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--line-strong);
 
-  --font-serif: 'Newsreader Variable', 'Iowan Old Style', Georgia, serif;
-  --font-sans: 'Inter Variable', 'Segoe UI', system-ui, sans-serif;
+  /* Inter and Newsreader cover Latin, Greek and Cyrillic. For other scripts the
+     browser falls through to these, per character: Nirmala UI (Windows) covers
+     Sinhala, Tamil and the Indic scripts; Noto fonts cover them elsewhere. */
+  --font-fallback: 'Nirmala UI', 'Noto Sans Sinhala', 'Iskoola Pota', 'Noto Sans Tamil', 'Latha', 'Noto Sans Devanagari', 'Segoe UI Historic', 'Noto Sans', 'Segoe UI Symbol';
+  --font-serif: 'Newsreader Variable', 'Iowan Old Style', Georgia, var(--font-fallback), serif;
+  --font-sans: 'Inter Variable', 'Segoe UI', var(--font-fallback), system-ui, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', Consolas, 'Cascadia Mono', Menlo, monospace;
 
   --radius-sm: 8px;

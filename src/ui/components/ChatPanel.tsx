@@ -72,7 +72,7 @@ export function ChatPanel(props: { note: Note; project?: Project; segments: Segm
   }, [draft]);
 
   // The lecture text is the big part; build it once per change, not per keystroke.
-  const ratio = useMemo(() => tokensPerChar(messages ?? []), [messages]);
+  const ratio = useMemo(() => tokensPerChar(messages ?? [], segments), [messages, segments]);
   const lecture = useMemo(() => buildLecture(note, project, segments, model, ratio), [note, project, segments, model, ratio]);
   const plan = useMemo(
     () => (messages ? planAsk({ note, project, segments, messages, model, draft, lecture }) : undefined),

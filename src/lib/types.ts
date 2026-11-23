@@ -16,6 +16,8 @@ export interface Project {
   language: string;
   /** Overrides the default summary prompt when non-empty. */
   summaryPrompt: string;
+  /** Language for this project's study notes ('spoken', a language code, or '' for the default from Settings). */
+  notesLanguage?: string;
   color: string;
   createdAt: number;
   updatedAt: number;
@@ -108,6 +110,8 @@ export interface Settings {
   summaryModel: string;
   /** ISO-639-1 code, or '' for auto-detect. */
   language: string;
+  /** Language to write study notes in: 'spoken' (the lecture's own) or a language code. */
+  notesLanguage: string;
   /** Default for new recordings: write AI study notes when the recording stops. */
   autoSummarize: boolean;
   /** Start a new note when the recorded tab navigates to a different page. */
@@ -129,6 +133,8 @@ export type ThemePreference = 'system' | 'light' | 'dark';
 
 export interface RecordingState {
   noteId: string;
+  /** Nothing has been heard from the tab for a while (video paused or muted?). */
+  quiet?: boolean;
   projectId: string;
   tabId: number;
   pageKey: string;

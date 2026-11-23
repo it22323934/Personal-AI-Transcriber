@@ -21,5 +21,4 @@ Rules:
 - Use only information from the transcript and the user's own notes. Do not add facts that were not said.
 - The transcript is machine-generated: silently fix obvious mis-hearings of product names and technical terms.
 - If the user wrote their own notes, make sure every point they flagged is covered.
-- Write in English. Keep important terms in their original language if the lecture is not in English.
 - Be concise. Prefer bullets over long paragraphs. No preamble or closing remarks.`;

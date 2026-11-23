@@ -18,6 +18,8 @@ const MIN_CHUNK_MS = 500; // shorter tails are dropped
 const SPEECH_LEVEL = 0.004; // block RMS above this counts as sound
 /** Pages showing a level meter ping this often; levels stop flowing without a recent ping. */
 const LEVEL_WATCH_TIMEOUT_MS = 5000;
+/** No sound from the tab for this long: say so (the video may be paused or muted). Tests shorten it. */
+const QUIET_MS = Number(localStorage.getItem('toru-test-quiet-ms')) || 20_000;
 
 /** Collects audio for one note and transcribes it chunk by chunk, in order. */
 class NoteSession {
@@ -149,7 +151,26 @@ async function publishState(next: RecordingState | null): Promise<void> {
   chrome.runtime.sendMessage({ target: 'background', type: 'RECORDING_CHANGED' }).catch(() => {});
 }
 
+/** When the tab last made a sound, and the once-a-second check that turns long silence into a warning. */
+let lastSoundAt = 0;
+let quietTimer: ReturnType<typeof setInterval> | null = null;
+
+function watchQuiet(on: boolean): void {
+  if (!on) {
+    if (quietTimer) clearInterval(quietTimer);
+    quietTimer = null;
+    return;
+  }
+  lastSoundAt = Date.now();
+  quietTimer ??= setInterval(() => {
+    if (!state || state.paused) return;
+    const quiet = Date.now() - lastSoundAt > QUIET_MS;
+    if (quiet !== !!state.quiet) void publishState({ ...state, quiet: quiet || undefined });
+  }, 1000);
+}
+
 function onBlock({ pcm, level }: { pcm: Int16Array; level: number }): void {
+  if (level >= SPEECH_LEVEL) lastSoundAt = Date.now();
   // Level meters update ~10x a second, and only while something shows one.
   if (++levelTick % 2 === 0) {
     const shown = state?.paused ? 0 : level;
@@ -183,6 +204,7 @@ async function start(msg: Extract<OffscreenRequest, { type: 'START' }>) {
     worklet.port.onmessage = (e: MessageEvent<{ pcm: Int16Array; level: number }>) => onBlock(e.data);
     await ctx.resume();
     capture = { stream, ctx, worklet };
+    watchQuiet(true);
   } catch (e) {
     stream.getTracks().forEach((t) => t.stop());
     await ctx?.close().catch(() => {});
@@ -218,6 +240,7 @@ async function start(msg: Extract<OffscreenRequest, { type: 'START' }>) {
 
 async function stop() {
   if (!capture) return {};
+  watchQuiet(false);
   const { stream, ctx, worklet } = capture;
   capture = null;
   worklet.port.onmessage = null;
@@ -247,7 +270,8 @@ async function pause() {
 
 async function resume() {
   if (!state || !state.paused) return {};
-  await publishState({ ...state, paused: false, runningSince: Date.now() });
+  lastSoundAt = Date.now();
+  await publishState({ ...state, paused: false, runningSince: Date.now(), quiet: undefined });
   return {};
 }
 
@@ -389,7 +413,7 @@ async function noteStatus(): Promise<Omit<MiniSnapshot, 'segments' | 'reset'>> {
   ]);
   return {
     type: 'snapshot',
-    recording: state ? { paused: state.paused, elapsedMs: state.elapsedMs, runningSince: state.runningSince } : null,
+    recording: state ? { paused: state.paused, elapsedMs: state.elapsedMs, runningSince: state.runningSince, quiet: !!state.quiet } : null,
     note: note
       ? {
           id: note.id,

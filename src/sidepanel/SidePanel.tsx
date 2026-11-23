@@ -400,6 +400,11 @@ function RecordingBar(props: {
           <IconMini size={14} /> Mini player
         </button>
       </div>
+      {recording.quiet && !recording.paused && (
+        <div className="callout callout-warn" role="status">
+          <div className="callout-body">Nothing is playing in the recorded tab. Is the video playing, and not muted?</div>
+        </div>
+      )}
       {!props.onlyThisTab && (
         <button className="link-btn" onClick={() => chrome.tabs.update(recording.tabId, { active: true })}>
           Recording another tab · go to it

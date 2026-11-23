@@ -2,21 +2,23 @@ import { useEffect, useRef, useState } from 'react';
 import { downloadFile } from '../../lib/export';
 import { errorMessage, formatBytes } from '../../lib/format';
 import { listModels } from '../../lib/openai';
-import { discardAudio } from '../../lib/pipeline';
+import { discardAudio, testTranscription } from '../../lib/pipeline';
 import { DEFAULT_SUMMARY_PROMPT } from '../../lib/prompts';
 import * as store from '../../lib/store';
 import type { Settings, ThemePreference } from '../../lib/types';
 import { IconCheck, IconDownload, IconEye, IconEyeOff, IconUpload } from '../icons';
 import { toast } from '../toast';
 import { applyTheme } from '../theme';
-import { LANGUAGES } from './languages';
+import { getLanguage, languageOptions } from '../../lib/languages';
+import { isDeprecatedTranscribeModel, RECOMMENDED_TRANSCRIBE_MODEL } from '../../lib/transcribeModels';
 import { Modal, useConfirm } from './Modal';
 import { ComboInput, Select } from './Select';
 
 const TRANSCRIBE_MODELS = [
-  { value: 'gpt-4o-mini-transcribe', description: 'Fast and low cost (default)' },
-  { value: 'gpt-4o-transcribe', description: 'Most accurate, about twice the cost' },
-  { value: 'whisper-1', description: 'The original Whisper model' },
+  { value: 'gpt-transcribe', description: 'OpenAI’s current model (default)' },
+  { value: 'gpt-4o-mini-transcribe', description: 'Older, low cost · shuts down 26 Feb 2027' },
+  { value: 'gpt-4o-transcribe', description: 'Older · shuts down 26 Feb 2027' },
+  { value: 'whisper-1', description: 'The original Whisper · shuts down 26 Feb 2027' },
 ];
 const SUMMARY_MODELS = [
   { value: 'gpt-5-mini', description: 'Balanced quality and cost (default)' },
@@ -43,16 +45,25 @@ export function SettingsModal({ initial, onClose }: { initial: Settings; onClose
 
   const set = <K extends keyof Settings>(key: K, value: Settings[K]) => setDraft((d) => ({ ...d, [key]: value }));
 
+  /** Checks the key, then transcribes one second of silence with the chosen model and language. */
   async function testKey() {
     setTest({ state: 'testing' });
+    const key = draft.apiKey.trim();
+    const model = draft.transcribeModel.trim() || store.DEFAULT_SETTINGS.transcribeModel;
+    const lang = getLanguage(draft.language);
+    const inLang = lang ? ` in ${lang.name}` : '';
     try {
-      const models = await listModels(draft.apiKey.trim());
-      const missing = [draft.transcribeModel, draft.summaryModel].filter((m) => !models.includes(m));
+      const models = await listModels(key);
+      const missing = [model, draft.summaryModel].filter((m) => !models.includes(m));
+      try {
+        await testTranscription(key, model, draft.language);
+      } catch (e) {
+        setTest({ state: 'fail', message: `The key works, but OpenAI refused a test transcription with ${model}${inLang}: ${errorMessage(e)}` });
+        return;
+      }
       setTest({
         state: 'ok',
-        message: missing.length
-          ? `Key works, but this account can’t see: ${missing.join(', ')}.`
-          : 'Key works. Both models are available.',
+        message: `${missing.length ? `Key works, but this account can’t see: ${missing.join(', ')}.` : 'Key works. Both models are available.'} Transcription with ${model}${inLang} works.`,
       });
     } catch (e) {
       setTest({ state: 'fail', message: errorMessage(e) });
@@ -197,7 +208,8 @@ export function SettingsModal({ initial, onClose }: { initial: Settings; onClose
             <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer">
               platform.openai.com/api-keys
             </a>
-            . It’s only sent to api.openai.com.
+            . It’s only sent to api.openai.com. Test also transcribes one second of silence with your model and
+            language (a fraction of a cent).
           </div>
         </div>
       </section>
@@ -215,19 +227,39 @@ export function SettingsModal({ initial, onClose }: { initial: Settings; onClose
             />
           </div>
           <div className="field">
-            <label htmlFor="lang">Default language</label>
+            <label htmlFor="lang">Spoken language</label>
             <Select
               id="lang"
-              ariaLabel="Default language"
+              ariaLabel="Spoken language"
               value={draft.language}
-              options={LANGUAGES.map(([code, label]) => ({ value: code, label }))}
-              onChange={(v) => set('language', v)}
+              options={languageOptions([{ value: '', label: 'Auto-detect' }])}
+              onChange={(v) => {
+                set('language', v);
+                setTest({ state: 'idle' });
+              }}
+              listMinWidth={280}
             />
           </div>
         </div>
+        {isDeprecatedTranscribeModel(draft.transcribeModel) && (
+          <div className="callout callout-warn">
+            <div className="callout-body">
+              <span>
+                OpenAI shuts down {draft.transcribeModel} on 26 February 2027. After that date TORU uses{' '}
+                {RECOMMENDED_TRANSCRIBE_MODEL} instead.
+              </span>
+              <div className="callout-actions">
+                <button className="btn btn-sm btn-light" onClick={() => set('transcribeModel', RECOMMENDED_TRANSCRIBE_MODEL)}>
+                  Switch to {RECOMMENDED_TRANSCRIBE_MODEL} now
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="field-hint">
-          gpt-4o-mini-transcribe is cheap and accurate. gpt-4o-transcribe is a little more accurate and costs about
-          twice as much. Setting the language helps with short or noisy clips.
+          For anything other than English, choose the language: TORU asks for its own script (සිංහල, தமிழ், हिन्दी…)
+          and keeps English terms in English. Languages marked “less accurate” work, but expect more mistakes. Projects
+          can set their own.
         </div>
         <label className="switch">
           <input type="checkbox" checked={draft.autoSplit} onChange={(e) => set('autoSplit', e.target.checked)} />
@@ -281,6 +313,18 @@ export function SettingsModal({ initial, onClose }: { initial: Settings; onClose
             suggestions={SUMMARY_MODELS}
           />
           <div className="field-hint">Used for the study notes and for answering your questions in the Ask tab.</div>
+        </div>
+        <div className="field">
+          <label htmlFor="nlang">Write study notes in</label>
+          <Select
+            id="nlang"
+            ariaLabel="Write study notes in"
+            value={draft.notesLanguage}
+            options={languageOptions([{ value: 'spoken', label: 'The language of the lecture' }])}
+            onChange={(v) => set('notesLanguage', v)}
+            listMinWidth={280}
+          />
+          <div className="field-hint">For example English notes from a Sinhala or German lecture. Projects can choose their own.</div>
         </div>
         <label className="switch">
           <input
