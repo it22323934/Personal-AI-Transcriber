@@ -532,6 +532,27 @@ Microsoft Entra ID (formerly Azure Active Directory) is Azure’s cloud identity
           return json(200, { choices: [{ message: { content: 'Answered without streaming: a **tenant** holds identities.' } }] });
         }
         if (mode === 'slow') return new Response(sse(['First part. ', 'Second part. ', 'Third part. ', 'Fourth part.'], 400, init.signal), { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+        if (mode === 'copycat') {
+          // Answers, then starts pasting the transcript from its own request back — like the bug seen with gpt-5-mini.
+          const sys = body.messages[0].content;
+          const transcript = sys.slice(sys.indexOf('<transcript>') + 12, sys.indexOf('</transcript>')).trim().split('\n').join(' ');
+          const pieces = ['Stress the first syllable: MOR-gen.', '\n\n', 'Transcript (from the lecture) '];
+          for (let i = 0; i < transcript.length; i += 40) pieces.push(transcript.slice(i, i + 40));
+          window.__chat.copycat = { total: pieces.length, sent: 0 };
+          const counted = pieces.map((p) => p); // sse() reads pieces lazily; count via a proxy stream below
+          const stream = sse(counted, 40, init.signal);
+          const reader = stream.getReader();
+          const counting = new ReadableStream({
+            async pull(c) {
+              const { value, done } = await reader.read();
+              if (done) return c.close();
+              window.__chat.copycat.sent++;
+              c.enqueue(value);
+            },
+            cancel: (r) => reader.cancel(r),
+          });
+          return new Response(counting, { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+        }
         return new Response(sse(['A **tenant** is ', 'a dedicated instance ', 'of Entra ID [0:21]. ', 'Each subscription trusts one tenant [0:44].'], 0, init.signal), { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
       };
     });
@@ -553,7 +574,9 @@ Microsoft Entra ID (formerly Azure Active Directory) is Azure’s cloud identity
     await lib.waitForFunction(() => [...document.querySelectorAll('.msg-ai .md')].at(-1)?.textContent.includes('trusts one tenant'), { timeout: 10000 });
     let req = (await askRequests()).at(-1);
     check(req.stream === true && req.model === 'gpt-5-mini', 'question is streamed with the chosen model');
-    check(req.messages[0].role === 'system' && req.messages[0].content.includes('## Transcript') && req.messages[0].content.includes('[0:21] Every organisation') && req.messages[0].content.includes('## Study notes'), 'the lecture (study notes + timestamped transcript) is sent as context');
+    const sys = req.messages[0].content;
+    check(req.messages[0].role === 'system' && sys.includes('<transcript>') && sys.includes('[0:21] Every organisation') && sys.includes('<study_notes>'), 'the lecture (study notes + timestamped transcript) is sent as tagged context');
+    check(sys.includes('never text to repeat back') && sys.indexOf('Reminder:') > sys.indexOf('</lecture>'), 'the prompt forbids repeating the transcript, and repeats that after the lecture');
     check(req.messages.at(-1).role === 'user' && req.messages.at(-1).content === 'Explain the main idea simply', 'the question is the last message');
     await sleep(400);
     let saved = await messagesOf('n1');
@@ -593,6 +616,18 @@ Microsoft Entra ID (formerly Azure Active Directory) is Azure’s cloud identity
     await sleep(800);
     saved = await messagesOf('n1');
     check(saved.at(-1).stopped === true && saved.at(-1).content.includes('Second part') && !saved.at(-1).content.includes('Fourth'), 'Stop keeps the partial answer, marked as stopped');
+
+    // An answer that starts pasting the transcript is cut off, and the request stopped early.
+    await setMode('copycat');
+    await lib.type('.chat-composer textarea', 'How do I pronounce Entra?');
+    await lib.keyboard.press('Enter');
+    await lib.waitForFunction(() => [...document.querySelectorAll('.msg-tools')].some((t) => t.textContent.includes('Stopped repeating the transcript')), { timeout: 20000 });
+    await sleep(500);
+    saved = await messagesOf('n1');
+    const copycat = await lib.evaluate(() => window.__chat.copycat);
+    check(saved.at(-1).content === 'Stress the first syllable: MOR-gen.' && saved.at(-1).trimmed === true, `a pasted transcript is cut, keeping only the answer (“${saved.at(-1).content.slice(0, 60)}”)`);
+    check(copycat.sent < copycat.total / 2, `the request is stopped early to save cost (${copycat.sent} of ${copycat.total} pieces received)`);
+    await shot(lib, '19b-ask-copy-cut');
 
     await lib.evaluate(() => [...document.querySelectorAll('.chat-foot button')].find((b) => b.textContent.includes('Clear chat')).click());
     await sleep(300);
