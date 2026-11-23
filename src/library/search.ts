@@ -1,8 +1,12 @@
-// Library search. Each lecture's transcript is flattened to one string the
-// first time it's searched and kept for later searches; a lecture's copy is
-// dropped only when its transcript (or the note itself) changes. Queries then
-// run over ~300 strings in memory instead of re-reading thousands of
-// transcript segments from IndexedDB on every keystroke.
+// Library search. While the search view is open, each lecture's transcript is
+// kept as one string so a query runs over ~300 strings in memory instead of
+// re-reading thousands of transcript segments from IndexedDB. A lecture's copy
+// is dropped when its transcript (or the note) changes, and the whole cache is
+// released when the search view closes.
+//
+// Strings are built with Array.join on purpose: V8 stores a join result as one
+// flat string, whereas a global regex replace (e.g. collapsing whitespace)
+// leaves a tree of word-sized pieces that costs ~3x the memory of the text.
 import { subscribe } from '../lib/events';
 import * as store from '../lib/store';
 import type { Note, Segment } from '../lib/types';
@@ -17,7 +21,7 @@ const MAX_RESULTS = 100;
 const BULK_LOAD_THRESHOLD = 25;
 
 const transcripts = new Map<string, string>();
-/** Summary + own notes, flattened; reused while the note is unchanged. */
+/** Summary + own notes as plain text; reused while the note is unchanged. */
 const noteText = new Map<string, { updatedAt: number; text: string }>();
 
 subscribe((e) => {
@@ -28,20 +32,27 @@ subscribe((e) => {
   }
 });
 
+/** Frees the cached text; called when the search view closes. */
+export function releaseSearchCache(): void {
+  transcripts.clear();
+  noteText.clear();
+}
+
+/** Markdown → plain text on one line, ending in a join so it's stored flat. */
 function plain(markdown: string): string {
   return markdown
     .replace(/^\s*([-*+•]|\d+[.)])\s+/gm, '') // list markers
     .replace(/[#*_`>]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+    .split(/\s+/)
+    .filter(Boolean)
+    .join(' ');
 }
 
 const joinSegments = (segments: Segment[]) =>
   segments
     .sort((a, b) => a.index - b.index)
     .map((s) => s.text)
-    .join(' ')
-    .replace(/\s+/g, ' ');
+    .join(' ');
 
 async function loadTranscripts(notes: Note[]): Promise<void> {
   const missing = notes.filter((n) => !transcripts.has(n.id));
@@ -59,13 +70,15 @@ async function loadTranscripts(notes: Note[]): Promise<void> {
   }
 }
 
-function bodyOf(note: Note): string {
+/** The searchable parts of a note, in snippet-preference order. Nothing is concatenated per query. */
+function partsOf(note: Note): string[] {
   let cached = noteText.get(note.id);
   if (!cached || cached.updatedAt !== note.updatedAt) {
-    cached = { updatedAt: note.updatedAt, text: `${plain(note.summary ?? '')} ${plain(note.myNotes)}` };
+    const text = [plain(note.summary ?? ''), plain(note.myNotes)].filter(Boolean).join(' ');
+    cached = { updatedAt: note.updatedAt, text };
     noteText.set(note.id, cached);
   }
-  return `${cached.text} ${transcripts.get(note.id) ?? ''}`;
+  return [cached.text, transcripts.get(note.id) ?? ''];
 }
 
 const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -83,16 +96,22 @@ export async function searchNotes(query: string): Promise<SearchResult[]> {
 
   const results: (SearchResult & { titleHit: boolean })[] = [];
   for (const note of notes) {
-    const body = bodyOf(note);
-    if (!patterns.every((p) => p.test(note.title) || p.test(body))) continue;
-    let at = Infinity;
-    for (const p of patterns) {
-      const m = p.exec(body);
-      if (m && m.index < at) at = m.index;
+    const parts = partsOf(note);
+    if (!patterns.every((p) => p.test(note.title) || parts.some((part) => p.test(part)))) continue;
+    // Snippet: around the earliest match in the first part that has one (summary/notes, then transcript).
+    let snippet = '';
+    for (const part of parts) {
+      let at = Infinity;
+      for (const p of patterns) {
+        const m = p.exec(part);
+        if (m && m.index < at) at = m.index;
+      }
+      if (Number.isFinite(at)) {
+        snippet = `${at > 70 ? '…' : ''}${part.slice(Math.max(0, at - 70), at + 170).trim()}…`;
+        break;
+      }
     }
-    const snippet = Number.isFinite(at)
-      ? `${at > 70 ? '…' : ''}${body.slice(Math.max(0, at - 70), at + 170).trim()}…`
-      : plain(note.summary ?? '').slice(0, 200);
+    if (!snippet) snippet = parts[0].slice(0, 200);
     results.push({ note, snippet, titleHit: patterns.some((p) => p.test(note.title)) });
   }
   return results

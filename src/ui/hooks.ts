@@ -122,14 +122,23 @@ export function useLevels(count: number): number[] {
   return levels;
 }
 
-/** The value, but only after it has stopped changing for `delay` ms. */
-export function useDebouncedValue<T>(value: T, delay: number): T {
+/**
+ * The value, but only after it has stopped changing for `delay` ms. Values
+ * for which `immediate` returns true (e.g. a cleared search box) apply at once,
+ * so a stale value never outlives them.
+ */
+export function useDebouncedValue<T>(value: T, delay: number, immediate?: (v: T) => boolean): T {
   const [settled, setSettled] = useState(value);
+  const now = immediate?.(value) ?? false;
   useEffect(() => {
+    if (now) {
+      setSettled(value);
+      return;
+    }
     const t = setTimeout(() => setSettled(value), delay);
     return () => clearTimeout(t);
-  }, [value, delay]);
-  return settled;
+  }, [value, delay, now]);
+  return now ? value : settled;
 }
 
 /** Debounced saver that also flushes on unmount. */

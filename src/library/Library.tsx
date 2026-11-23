@@ -12,7 +12,7 @@ import { subscribe } from '../lib/events';
 import { elapsedMs, useDebouncedValue, useNote, useNotes, useNow, useProjects, useRecording, useSettings } from '../ui/hooks';
 import { IconDownload, IconHome, IconPencil, IconPlus, IconSearch, IconSettings, IconStop, Logo } from '../ui/icons';
 import { toast, Toaster } from '../ui/toast';
-import { searchNotes, searchTerms, type SearchResult } from './search';
+import { releaseSearchCache, searchNotes, searchTerms, type SearchResult } from './search';
 
 type Route = { name: 'home' } | { name: 'project'; id: string } | { name: 'note'; id: string };
 
@@ -58,7 +58,7 @@ export function Library() {
   const [modal, setModal] = useState<ModalState>(null);
   const [query, setQuery] = useState('');
   // Search once typing pauses, not on every keystroke.
-  const searchQuery = useDebouncedValue(query.trim(), 250);
+  const searchQuery = useDebouncedValue(query.trim(), 250, (q) => q === '');
 
   useEffect(() => {
     store.ensureInbox().catch(console.error);
@@ -467,6 +467,7 @@ function SearchView(props: { query: string; typed: string; projects: Project[]; 
   const { query, projects, liveNoteId } = props;
   const results = useSearch(query);
   const terms = searchTerms(query);
+  useEffect(() => releaseSearchCache, []); // give the memory back when search closes
   return (
     <div className="page">
       <div className="eyebrow">Search</div>
