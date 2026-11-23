@@ -183,6 +183,35 @@ export function SettingsModal({ initial, onClose }: { initial: Settings; onClose
       </section>
 
       <section className="modal-section">
+        <h3>While recording</h3>
+        <div className="field">
+          <span className="field-label">Follow along in</span>
+          <div className="seg" role="radiogroup" aria-label="Recording view" style={{ justifySelf: 'start' }}>
+            <button
+              role="radio"
+              aria-selected={draft.recordingView === 'panel'}
+              aria-checked={draft.recordingView === 'panel'}
+              onClick={() => set('recordingView', 'panel')}
+            >
+              Side panel
+            </button>
+            <button
+              role="radio"
+              aria-selected={draft.recordingView === 'mini'}
+              aria-checked={draft.recordingView === 'mini'}
+              onClick={() => set('recordingView', 'mini')}
+            >
+              Mini player on the page
+            </button>
+          </div>
+          <div className="field-hint">
+            The mini player is a small bar on the lecture page with the timer, pause and stop. Click it to see the live
+            transcript. You can switch views any time while recording; TORU remembers the one you used last.
+          </div>
+        </div>
+      </section>
+
+      <section className="modal-section">
         <h3>Study notes</h3>
         <div className="field">
           <label htmlFor="smodel">Model</label>
@@ -206,8 +235,11 @@ export function SettingsModal({ initial, onClose }: { initial: Settings; onClose
             onChange={(e) => set('autoSummarize', e.target.checked)}
           />
           <span className="switch-text">
-            <strong>Write notes automatically</strong>
-            <span className="field-hint">Generate the summary as soon as a recording stops.</span>
+            <strong>AI study notes when a recording stops</strong>
+            <span className="field-hint">
+              The default for new recordings. Each summary uses your OpenAI credits; turn this off to keep just the
+              transcript. You can switch it per recording, and write notes for any lecture later.
+            </span>
           </span>
         </label>
         <div className="field">

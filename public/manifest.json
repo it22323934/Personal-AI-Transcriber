@@ -32,7 +32,10 @@
     "offscreen",
     "tabs",
     "contextMenus",
-    "unlimitedStorage"
+    "unlimitedStorage",
+    "scripting",
+    "activeTab",
+    "storage"
   ],
   "host_permissions": [
     "https://api.openai.com/*"

@@ -36,6 +36,12 @@ export interface Note {
   summary?: string;
   summaryModel?: string;
   summaryAt?: number;
+  /**
+   * Write AI study notes automatically when this recording ends. Set from the
+   * default when recording starts and switchable while recording. Undefined
+   * (older notes) falls back to the setting.
+   */
+  autoSummary?: boolean;
   myNotes: string;
 }
 
@@ -65,12 +71,18 @@ export interface Settings {
   summaryModel: string;
   /** ISO-639-1 code, or '' for auto-detect. */
   language: string;
+  /** Default for new recordings: write AI study notes when the recording stops. */
   autoSummarize: boolean;
   /** Start a new note when the recorded tab navigates to a different page. */
   autoSplit: boolean;
   summaryPrompt: string;
+  /** Where to follow a live recording; remembers the last view used. */
+  recordingView: RecordingView;
   lastProjectId?: string;
 }
+
+/** 'panel' = Chrome side panel, 'mini' = floating mini player on the recorded page. */
+export type RecordingView = 'panel' | 'mini';
 
 export interface RecordingState {
   noteId: string;

@@ -82,6 +82,12 @@ export const IconBook = make(
   <path d="M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2zM22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z" />,
 );
 export const IconExpand = make(<path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />);
+export const IconMini = make(
+  <>
+    <rect x="2.5" y="4" width="19" height="16" rx="2.5" />
+    <rect x="12" y="11.5" width="7" height="6" rx="1.2" fill="currentColor" stroke="none" />
+  </>,
+);
 export const IconCheck = make(<path d="M20 6 9 17l-5-5" />);
 export const IconRefresh = make(<path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5" />);
 export const IconEye = make(

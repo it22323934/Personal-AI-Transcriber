@@ -19,10 +19,12 @@ export default defineConfig({
         library: r('./library.html'),
         offscreen: r('./offscreen.html'),
         background: r('./src/background/index.ts'),
+        widget: r('./src/widget/widget.ts'),
       },
       output: {
-        // The manifest points at a fixed service-worker filename.
-        entryFileNames: (chunk) => (chunk.name === 'background' ? 'background.js' : 'assets/[name]-[hash].js'),
+        // The service worker and the injected mini player need fixed filenames.
+        entryFileNames: (chunk) =>
+          chunk.name === 'background' || chunk.name === 'widget' ? `${chunk.name}.js` : 'assets/[name]-[hash].js',
         chunkFileNames: 'assets/[name]-[hash].js',
         manualChunks: (id) => (/node_modules[\\/](react|react-dom|scheduler)[\\/]/.test(id) ? 'react' : undefined),
         assetFileNames: 'assets/[name]-[hash][extname]',

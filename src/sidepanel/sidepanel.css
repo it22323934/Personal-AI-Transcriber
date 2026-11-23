@@ -121,3 +121,31 @@
 .rec-bar {
   grid-template-columns: minmax(0, 1fr);
 }
+
+.switch-sm {
+  align-items: center;
+}
+.switch-sm .switch-text strong {
+  font-size: 13px;
+}
+.switch-sm .switch-text .field-hint {
+  font-size: 11.5px;
+}
+.recorder .switch-sm {
+  align-items: flex-start;
+}
+
+.toggle-btn {
+  flex: none;
+}
+.toggle-btn.on {
+  color: var(--lime);
+  background: var(--lime-soft);
+}
+
+.rec-bar-foot {
+  margin-top: -2px;
+}
+.rec-bar-foot .btn {
+  margin-right: -8px;
+}

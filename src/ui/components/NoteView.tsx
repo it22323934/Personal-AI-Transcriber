@@ -306,7 +306,12 @@ function SummaryPanel(props: {
     );
   }
   if (live) {
-    return (
+    return note.autoSummary === false ? (
+      <Empty
+        title="AI study notes are off"
+        text="Only the transcript is being saved for this recording. Switch “AI study notes when I stop” on above, or write notes later from here."
+      />
+    ) : (
       <Empty
         title="Notes arrive after the lecture"
         text="Keep watching. When you stop recording, the transcript is turned into study notes here."
@@ -317,7 +322,7 @@ function SummaryPanel(props: {
     return (
       <Empty
         title="No study notes yet"
-        text="Turn the transcript into a summary, key concepts and self-test questions."
+        text="Turn the transcript into a summary, key concepts and self-test questions. Uses your OpenAI credits (usually under 1¢)."
         action={
           <button className="btn btn-primary" onClick={props.onGenerate}>
             <IconSparkle size={15} /> Write study notes

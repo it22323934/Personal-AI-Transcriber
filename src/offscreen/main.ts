@@ -5,7 +5,7 @@
 import { concat, downsample, encodeWav, normalize, rms } from '../lib/audio';
 import { emit, subscribe } from '../lib/events';
 import { cleanTitle, errorMessage, pageKey } from '../lib/format';
-import type { OffscreenRequest } from '../lib/messages';
+import { MINI_PORT, type MiniCommand, type MiniMessage, type MiniSnapshot, type OffscreenRequest } from '../lib/messages';
 import { finalizeNote, transcribeWithRetry } from '../lib/pipeline';
 import * as store from '../lib/store';
 import type { PendingChunk, RecordingState } from '../lib/types';
@@ -190,9 +190,11 @@ async function start(msg: Extract<OffscreenRequest, { type: 'START' }>) {
     title: cleanTitle(msg.title),
     sourceUrl: msg.url,
     status: 'recording',
+    autoSummary: (await store.getSettings()).autoSummarize,
   });
   const key = pageKey(msg.url);
   session = new NoteSession(note.id, key, capture.ctx.sampleRate);
+  focusNoteId = note.id;
   await publishState({
     noteId: note.id,
     projectId: msg.projectId,
@@ -245,10 +247,19 @@ async function rollover(title: string, url: string) {
   const key = pageKey(url);
   if (!key || key === session.pageKey) return {};
   const previous = session;
-  // Follow the live note if the user moved it to another project mid-recording.
-  const projectId = (await store.getNote(previous.noteId))?.projectId ?? state.projectId;
-  const note = await store.createNote({ projectId, title: cleanTitle(title), sourceUrl: url, status: 'recording' });
+  // Follow the live note: the user may have moved it to another project or
+  // switched its AI summary on/off mid-recording; the next lecture inherits that.
+  const prevNote = await store.getNote(previous.noteId);
+  const projectId = prevNote?.projectId ?? state.projectId;
+  const note = await store.createNote({
+    projectId,
+    title: cleanTitle(title),
+    sourceUrl: url,
+    status: 'recording',
+    autoSummary: prevNote?.autoSummary ?? (await store.getSettings()).autoSummarize,
+  });
   session = new NoteSession(note.id, key, capture.ctx.sampleRate);
+  focusNoteId = note.id;
   await publishState({
     ...state,
     noteId: note.id,
@@ -311,6 +322,94 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   return true;
 });
 
+// ------------------------------------------------------------ mini player
+// The on-page mini player connects over a port and gets pushed snapshots of
+// the live (or just-finished) note plus input levels.
+
+const miniPorts = new Set<chrome.runtime.Port>();
+/** The note the mini player follows: the live one, or the one that just ended. */
+let focusNoteId: string | null = null;
+let snapshotTimer: ReturnType<typeof setTimeout> | null = null;
+
+function post(port: chrome.runtime.Port, msg: MiniMessage): void {
+  try {
+    port.postMessage(msg);
+  } catch {
+    miniPorts.delete(port);
+  }
+}
+
+async function snapshot(): Promise<MiniSnapshot> {
+  const note = focusNoteId ? await store.getNote(focusNoteId) : undefined;
+  const [segments, pending, project, settings] = await Promise.all([
+    note ? store.getSegments(note.id) : Promise.resolve([]),
+    note ? store.countChunks(note.id) : Promise.resolve(0),
+    note ? store.getProject(note.projectId) : Promise.resolve(undefined),
+    store.getSettings(),
+  ]);
+  return {
+    type: 'snapshot',
+    recording: state ? { paused: state.paused, elapsedMs: state.elapsedMs, runningSince: state.runningSince } : null,
+    note: note
+      ? {
+          id: note.id,
+          title: note.title,
+          projectName: project?.name ?? '',
+          autoSummary: note.autoSummary ?? settings.autoSummarize,
+          status: note.status,
+          hasSummary: !!note.summary,
+        }
+      : null,
+    segments: segments.map((s) => ({ index: s.index, startMs: s.startMs, text: s.text })),
+    pending,
+  };
+}
+
+/** Coalesces bursts of change events into one snapshot push. */
+function pushSnapshot(): void {
+  if (!miniPorts.size || snapshotTimer) return;
+  snapshotTimer = setTimeout(async () => {
+    snapshotTimer = null;
+    const snap = await snapshot().catch(() => null);
+    if (snap) for (const port of miniPorts) post(port, snap);
+  }, 120);
+}
+
+async function handleMini(cmd: MiniCommand): Promise<void> {
+  switch (cmd.type) {
+    case 'PAUSE':
+      await serial(pause);
+      break;
+    case 'RESUME':
+      await serial(resume);
+      break;
+    case 'STOP':
+      await serial(stop);
+      break;
+    case 'SUMMARY':
+      if (focusNoteId) await store.updateNote(focusNoteId, { autoSummary: cmd.on });
+      break;
+  }
+}
+
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== MINI_PORT) return;
+  miniPorts.add(port);
+  port.onDisconnect.addListener(() => miniPorts.delete(port));
+  port.onMessage.addListener((cmd: MiniCommand) => {
+    handleMini(cmd).catch((e) => console.error('[toru] mini player command failed', e));
+  });
+  snapshot().then((snap) => post(port, snap), console.error);
+});
+
 subscribe((e) => {
   if (e.type === 'settings') session?.retryHeldBack();
+  if (!miniPorts.size) return;
+  if (e.type === 'level') {
+    for (const port of miniPorts) post(port, e);
+  } else if (e.type === 'recording' || e.type === 'settings' || e.type === 'projects') {
+    pushSnapshot();
+  } else if ((e.type === 'notes' || e.type === 'segments' || e.type === 'chunks') && (!e.noteId || e.noteId === focusNoteId)) {
+    pushSnapshot();
+  }
 });

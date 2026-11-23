@@ -16,6 +16,7 @@ export const DEFAULT_SETTINGS: Settings = {
   language: '',
   autoSummarize: true,
   autoSplit: true,
+  recordingView: 'panel',
   summaryPrompt: DEFAULT_SUMMARY_PROMPT,
 };
 
@@ -166,7 +167,9 @@ export async function getNote(id: string): Promise<Note | undefined> {
   return db.get<Note>('notes', id);
 }
 
-export async function createNote(input: Pick<Note, 'projectId' | 'title' | 'sourceUrl' | 'status'>): Promise<Note> {
+export async function createNote(
+  input: Pick<Note, 'projectId' | 'title' | 'sourceUrl' | 'status'> & Partial<Pick<Note, 'autoSummary'>>,
+): Promise<Note> {
   const now = Date.now();
   const note: Note = { ...input, id: uid(), createdAt: now, updatedAt: now, durationMs: 0, myNotes: '' };
   await db.put('notes', note);

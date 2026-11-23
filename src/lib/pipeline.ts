@@ -117,7 +117,7 @@ export async function finalizeNote(
     return;
   }
   const settings = await store.getSettings();
-  if (opts.autoSummarize ?? settings.autoSummarize) {
+  if (opts.autoSummarize ?? note.autoSummary ?? settings.autoSummarize) {
     try {
       await generateSummary(noteId);
     } catch {

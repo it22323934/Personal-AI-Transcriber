@@ -6,7 +6,40 @@ export type BackgroundRequest =
   | { type: 'START'; tabId: number; projectId: string }
   | { type: 'GET_STATE' }
   | { type: 'RECORDING_CHANGED' }
-  | { type: 'OFFSCREEN_IDLE' };
+  | { type: 'OFFSCREEN_IDLE' }
+  /** Show the mini player on the recorded tab (and remember that view). */
+  | { type: 'SHOW_MINI' }
+  /** From the mini player: open the side panel instead. */
+  | { type: 'OPEN_PANEL' }
+  | { type: 'OPEN_LIBRARY'; route: string }
+  /** From the mini player once the recorder has gone: how did the note end up? */
+  | { type: 'NOTE_STATUS'; noteId: string };
+
+/** Mini player ⇄ offscreen recorder, over a runtime port named MINI_PORT. */
+export const MINI_PORT = 'toru-mini';
+
+export type MiniCommand =
+  | { type: 'PAUSE' }
+  | { type: 'RESUME' }
+  | { type: 'STOP' }
+  | { type: 'SUMMARY'; on: boolean };
+
+export interface MiniSnapshot {
+  type: 'snapshot';
+  recording: { paused: boolean; elapsedMs: number; runningSince: number | null } | null;
+  note: {
+    id: string;
+    title: string;
+    projectName: string;
+    autoSummary: boolean;
+    status: string;
+    hasSummary: boolean;
+  } | null;
+  segments: { index: number; startMs: number; text: string }[];
+  pending: number;
+}
+
+export type MiniMessage = MiniSnapshot | { type: 'level'; level: number };
 
 export type OffscreenRequest =
   | { type: 'START'; streamId: string; tabId: number; projectId: string; title: string; url: string }

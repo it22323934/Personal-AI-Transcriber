@@ -15,12 +15,14 @@ import {
   IconPause,
   IconPlay,
   IconPlus,
+  IconMini,
   IconRecord,
   IconSettings,
+  IconSparkle,
   IconStop,
   Logo,
 } from '../ui/icons';
-import { openLibrary } from '../ui/nav';
+import { openLibrary } from '../lib/nav';
 import { toast, Toaster } from '../ui/toast';
 
 const RECORDABLE = /^(https?|file):/;
@@ -109,7 +111,12 @@ export function SidePanel() {
     setStarting(true);
     setStartError(null);
     try {
-      await callBackground({ type: 'START', tabId: tab.id, projectId: projectId ?? store.INBOX_ID });
+      const reply = await callBackground<{ mini?: boolean }>({
+        type: 'START',
+        tabId: tab.id,
+        projectId: projectId ?? store.INBOX_ID,
+      });
+      if (reply.mini) window.close(); // the mini player on the page takes over
     } catch (e) {
       setStartError(errorMessage(e));
     } finally {
@@ -125,6 +132,18 @@ export function SidePanel() {
       toast(errorMessage(e), 'error');
     }
   }
+
+  async function showMini() {
+    try {
+      await callBackground({ type: 'SHOW_MINI' });
+      window.close(); // focus on the lecture; the mini player is on the page now
+    } catch (e) {
+      toast(errorMessage(e), 'error');
+    }
+  }
+
+  const summaryDefault = settings?.autoSummarize ?? true;
+  const setSummaryDefault = (on: boolean) => void store.saveSettings({ autoSummarize: on });
 
   async function togglePause() {
     if (!recording) return;
@@ -161,8 +180,11 @@ export function SidePanel() {
             projects={projects ?? []}
             onlyThisTab={tab?.id === recording.tabId}
             onProject={chooseProject}
+            summaryOn={liveNote?.autoSummary ?? summaryDefault}
+            onSummary={(on) => liveNote && void store.updateNote(liveNote.id, { autoSummary: on })}
             onPause={togglePause}
             onStop={stop}
+            onMini={showMini}
           />
         )}
       </div>
@@ -188,6 +210,15 @@ export function SidePanel() {
           <section className="card recorder recorder-compact">
             <div className="row">
               <ProjectSelect projects={projects ?? []} value={projectId} onChange={chooseProject} />
+              <button
+                className={`icon-btn toggle-btn ${summaryDefault ? 'on' : ''}`}
+                aria-pressed={summaryDefault}
+                aria-label="AI study notes when I stop"
+                title={`AI study notes when I stop: ${summaryDefault ? 'on' : 'off'}`}
+                onClick={() => setSummaryDefault(!summaryDefault)}
+              >
+                <IconSparkle />
+              </button>
               <button
                 className="btn btn-primary"
                 disabled={!canRecord || starting}
@@ -231,6 +262,8 @@ export function SidePanel() {
                 {canRecord && <div className="source-host faint truncate">{hostname(tab!.url!)}</div>}
               </div>
             </div>
+
+            <SummarySwitch on={summaryDefault} onChange={setSummaryDefault} withHint />
 
             <button className="btn btn-primary btn-lg btn-block" disabled={!canRecord || starting} onClick={start}>
               <IconRecord size={14} /> {starting ? 'Starting…' : 'Start recording'}
@@ -284,6 +317,24 @@ export function SidePanel() {
   );
 }
 
+function SummarySwitch(props: { on: boolean; onChange: (on: boolean) => void; withHint?: boolean }) {
+  return (
+    <label className="switch switch-sm">
+      <input type="checkbox" checked={props.on} onChange={(e) => props.onChange(e.target.checked)} />
+      <span className="switch-text">
+        <strong>AI study notes when I stop</strong>
+        {props.withHint && (
+          <span className="field-hint">
+            {props.on
+              ? 'Written from your OpenAI credits, usually under 1¢ a lecture.'
+              : 'Transcript only. You can still write notes for any lecture later.'}
+          </span>
+        )}
+      </span>
+    </label>
+  );
+}
+
 function StartError({ message }: { message: string }) {
   return (
     <div className="callout callout-warn" role="alert">
@@ -315,8 +366,11 @@ function RecordingBar(props: {
   projects: Project[];
   onlyThisTab: boolean;
   onProject: (id: string) => void;
+  summaryOn: boolean;
+  onSummary: (on: boolean) => void;
   onPause: () => void;
   onStop: () => void;
+  onMini: () => void;
 }) {
   const { recording } = props;
   const now = useNow(!recording.paused);
@@ -342,6 +396,13 @@ function RecordingBar(props: {
         </button>
         <button className="btn btn-sm btn-light" onClick={props.onStop}>
           <IconStop size={13} /> Stop
+        </button>
+      </div>
+      <div className="row rec-bar-foot">
+        <SummarySwitch on={props.summaryOn} onChange={props.onSummary} />
+        <span className="grow" />
+        <button className="btn btn-ghost btn-sm" onClick={props.onMini} title="Close the panel and follow along in a small player on the page">
+          <IconMini size={14} /> Mini player
         </button>
       </div>
       {!props.onlyThisTab && (
