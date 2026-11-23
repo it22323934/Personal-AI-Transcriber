@@ -395,7 +395,10 @@ async function handleMini(cmd: MiniCommand): Promise<void> {
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== MINI_PORT) return;
   miniPorts.add(port);
-  port.onDisconnect.addListener(() => miniPorts.delete(port));
+  port.onDisconnect.addListener(() => {
+    void chrome.runtime.lastError; // e.g. the page went into the back/forward cache
+    miniPorts.delete(port);
+  });
   port.onMessage.addListener((cmd: MiniCommand) => {
     handleMini(cmd).catch((e) => console.error('[toru] mini player command failed', e));
   });

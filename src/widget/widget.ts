@@ -29,11 +29,11 @@ import type { MiniCommand, MiniMessage, MiniSnapshot } from '../lib/messages';
   .mini {
     --bg: #161613; --surface: #1f1f1b; --hover: #2a2a25; --line: rgba(236,234,222,.1); --line2: rgba(236,234,222,.18);
     --text: #ecebe3; --text2: #b3b1a5; --text3: #7c7a70; --lime: #cfe05b; --olive: #5d7113; --olive-text: #f5f8e6; --red: #f2555a;
-    display: flex; flex-direction: column-reverse; align-items: flex-end; gap: 8px;
+    display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
     font: 400 13px/1.5 'Inter Variable', Inter, 'Segoe UI', system-ui, sans-serif; color: var(--text);
     -webkit-font-smoothing: antialiased;
   }
-  .mini.below { flex-direction: column; }
+  .mini.below { flex-direction: column-reverse; }
   button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; padding: 0; }
   button:focus-visible { outline: 2px solid var(--lime); outline-offset: 2px; }
   svg { display: block; flex: none; }
@@ -491,6 +491,12 @@ import type { MiniCommand, MiniMessage, MiniSnapshot } from '../lib/messages';
       connect();
     },
   };
+
+  // Coming back with the Back button restores this page from the back/forward
+  // cache with its port closed, so reconnect to pick up the live state again.
+  window.addEventListener('pageshow', (e) => {
+    if (e.persisted && scope.__toruMini) scope.__toruMini.show();
+  });
 
   document.documentElement.append(host);
   void loadPrefs();
