@@ -42,6 +42,8 @@ export interface Note {
    * (older notes) falls back to the setting.
    */
   autoSummary?: boolean;
+  /** What the Ask tab sends as the lecture: the full transcript (default) or only the study notes (cheaper). */
+  askContext?: 'transcript' | 'notes';
   myNotes: string;
 }
 
@@ -57,6 +59,7 @@ export interface Segment {
 /** One turn of the "Ask" conversation about a lecture. */
 export interface ChatMessage {
   noteId: string;
+  /** Order in the conversation. A compaction sits at x.5, right after the last message it covers. */
   index: number;
   role: 'user' | 'assistant';
   content: string;
@@ -68,6 +71,24 @@ export interface ChatMessage {
   trimmed?: boolean;
   /** The request failed; content is empty and this explains why. */
   error?: string;
+  /** Real token usage reported by OpenAI for the request that produced this answer. */
+  usage?: TokenUsage;
+  /** Characters sent in that request; with usage.prompt it calibrates later estimates. */
+  promptChars?: number;
+  /**
+   * 'compaction': content is a summary that replaces every earlier message in
+   * what's sent to the model (the originals stay saved and readable).
+   */
+  kind?: 'compaction';
+  /** For a compaction: how many messages it summarises in total. */
+  covers?: number;
+}
+
+export interface TokenUsage {
+  prompt: number;
+  completion: number;
+  /** Prompt tokens served from OpenAI's cache (billed at a discount). */
+  cached: number;
 }
 
 /** Audio waiting to be transcribed. Deleted once its segment is stored. */
@@ -94,6 +115,8 @@ export interface Settings {
   summaryPrompt: string;
   /** Where to follow a live recording; remembers the last view used. */
   recordingView: RecordingView;
+  /** Summarise older Ask messages automatically once they no longer fit what's sent. */
+  autoCompact: boolean;
   /** Colour theme; 'system' follows the operating system. */
   theme: ThemePreference;
   lastProjectId?: string;

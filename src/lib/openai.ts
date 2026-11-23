@@ -1,3 +1,5 @@
+import type { TokenUsage } from './types';
+
 const API = 'https://api.openai.com/v1';
 
 export class OpenAIError extends Error {
@@ -69,31 +71,54 @@ export interface ChatTurn {
   content: string;
 }
 
-async function completeOnce(apiKey: string, model: string, messages: ChatTurn[], signal?: AbortSignal): Promise<string> {
-  // Only model + messages are sent so any chat model (gpt-4o, gpt-4.1, gpt-5…) works.
-  const res = await request('/chat/completions', apiKey, {
+export interface ChatResult {
+  text: string;
+  /** Token usage as reported by OpenAI (missing if the request was cut short). */
+  usage?: TokenUsage;
+}
+
+function toUsage(u: unknown): TokenUsage | undefined {
+  const v = u as { prompt_tokens?: number; completion_tokens?: number; prompt_tokens_details?: { cached_tokens?: number } } | null;
+  if (!v || typeof v.prompt_tokens !== 'number') return undefined;
+  return { prompt: v.prompt_tokens, completion: v.completion_tokens ?? 0, cached: v.prompt_tokens_details?.cached_tokens ?? 0 };
+}
+
+/** One non-streaming chat request. Only model + messages are sent, so any chat model works. */
+export async function chatComplete(opts: {
+  apiKey: string;
+  model: string;
+  messages: ChatTurn[];
+  signal?: AbortSignal;
+}): Promise<ChatResult> {
+  const res = await request('/chat/completions', opts.apiKey, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model, messages }),
-    signal,
+    body: JSON.stringify({ model: opts.model, messages: opts.messages }),
+    signal: opts.signal,
   });
   const body = await res.json();
   const text = body?.choices?.[0]?.message?.content;
   if (!text || typeof text !== 'string') throw new OpenAIError('The model returned an empty response.', 500);
-  return text.trim();
+  return { text: text.trim(), usage: toUsage(body?.usage) };
 }
 
 export async function chat(opts: { apiKey: string; model: string; system: string; user: string }): Promise<string> {
-  return completeOnce(opts.apiKey, opts.model, [
-    { role: 'system', content: opts.system },
-    { role: 'user', content: opts.user },
-  ]);
+  const { text } = await chatComplete({
+    apiKey: opts.apiKey,
+    model: opts.model,
+    messages: [
+      { role: 'system', content: opts.system },
+      { role: 'user', content: opts.user },
+    ],
+  });
+  return text;
 }
 
 /**
- * Streams a chat answer, calling onText with the text so far. Some accounts
- * can't stream some models (OpenAI requires organisation verification for
- * streaming certain models); then this quietly falls back to one request.
+ * Streams a chat answer, calling onText with the text so far, and asks for the
+ * token usage in the final chunk. Some accounts can't stream some models
+ * (OpenAI requires organisation verification for streaming certain models);
+ * then this quietly falls back to one normal request.
  */
 export async function chatStream(opts: {
   apiKey: string;
@@ -101,30 +126,37 @@ export async function chatStream(opts: {
   messages: ChatTurn[];
   signal?: AbortSignal;
   onText: (textSoFar: string) => void;
-}): Promise<string> {
+}): Promise<ChatResult> {
   let res: Response;
   try {
     res = await request('/chat/completions', opts.apiKey, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: opts.model, messages: opts.messages, stream: true }),
+      body: JSON.stringify({
+        model: opts.model,
+        messages: opts.messages,
+        stream: true,
+        stream_options: { include_usage: true },
+      }),
       signal: opts.signal,
     });
   } catch (e) {
     if (e instanceof OpenAIError && e.status === 400 && /stream|verif/i.test(e.message)) {
-      const text = await completeOnce(opts.apiKey, opts.model, opts.messages, opts.signal);
-      opts.onText(text);
-      return text;
+      const result = await chatComplete(opts);
+      opts.onText(result.text);
+      return result;
     }
     throw e;
   }
   if (!res.body) throw new OpenAIError('OpenAI sent an empty response.', 500);
 
   // Server-sent events: lines of "data: {json}", ending with "data: [DONE]".
+  // With include_usage, the last chunk before [DONE] has no choices, only usage.
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
   let text = '';
+  let usage: TokenUsage | undefined;
   for (;;) {
     const { value, done } = await reader.read();
     if (done) break;
@@ -135,9 +167,11 @@ export async function chatStream(opts: {
       buffer = buffer.slice(nl + 1);
       if (!line.startsWith('data:')) continue;
       const data = line.slice(5).trim();
-      if (data === '[DONE]') return text.trim();
+      if (data === '[DONE]') return { text: text.trim(), usage };
       try {
-        const delta = JSON.parse(data)?.choices?.[0]?.delta?.content;
+        const chunk = JSON.parse(data);
+        usage = toUsage(chunk?.usage) ?? usage;
+        const delta = chunk?.choices?.[0]?.delta?.content;
         if (typeof delta === 'string' && delta) {
           text += delta;
           opts.onText(text);
@@ -148,7 +182,7 @@ export async function chatStream(opts: {
     }
   }
   if (!text.trim()) throw new OpenAIError('The model returned an empty response.', 500);
-  return text.trim();
+  return { text: text.trim(), usage };
 }
 
 export async function listModels(apiKey: string): Promise<string[]> {

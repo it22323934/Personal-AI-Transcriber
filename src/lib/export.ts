@@ -19,7 +19,7 @@ export function noteToMarkdown(
   const parts = [header(note, project)];
   if (note.summary) parts.push(note.summary.trim());
   if (note.myNotes.trim()) parts.push(`## My notes\n\n${note.myNotes.trim()}`);
-  const qa = chat.filter((m) => !m.error && m.content.trim());
+  const qa = chat.filter((m) => !m.error && m.content.trim() && m.kind !== 'compaction');
   if (qa.length) {
     const turns = qa.map((m) => (m.role === 'user' ? `**Q:** ${m.content.trim()}` : m.content.trim()));
     parts.push(`## Questions and answers\n\n${turns.join('\n\n')}`);

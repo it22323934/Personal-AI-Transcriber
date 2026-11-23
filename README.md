@@ -102,6 +102,25 @@ Every note has an **Ask** tab, in the side panel and in the library:
 
 It uses the model set under **Settings → Study notes and questions** (default `gpt-5-mini`).
 
+#### Context meter, long conversations and compaction
+
+Each question sends the lecture plus the conversation so far.
+
+**The meter.** The Ask footer shows **≈ tokens per question** and what share of the model's limit that is. Before sending, it's an estimate based on character count, using the ratio learned from OpenAI's last reported usage, which varies by language. After each answer it also shows OpenAI's exact figures, including how many tokens were **cached** (cheaper). Hover over it for a breakdown: lecture, conversation, the model's limit, last answer. The bar turns amber at 70% of the model's limit and red at 90%.
+
+**What gets sent per question:**
+- The transcript may use up to half of the model's limit, capped at about 100k tokens (roughly 6 hours of lecture). For longer lectures the middle is left out, and the Ask tab says so.
+- The conversation is capped at about 24k tokens. Older messages that don't fit aren't sent, and the Ask tab warns you instead of silently forgetting them.
+
+**Compact.** Folds the older messages into a short summary, keeping the 4 newest messages word for word. The summary covers what was asked, the key points of each answer, corrections, and quiz progress such as "3 of 4 correct". Later questions send the summary instead of the originals, so TORU remembers more and each question costs less.
+- It's one small extra request, and the lecture isn't re-sent for it.
+- The originals stay saved, folded under a divider ("26 earlier messages compacted") with **Show summary** and **Show messages**.
+- To have it happen automatically, turn on **Settings → Compact long conversations automatically**.
+
+**Full transcript / Study notes only.** A switch in the Ask footer, set per lecture. **Study notes only** sends the summary and your notes instead of the transcript. It's far cheaper for long lectures, but answers can't cite times.
+
+Model limits come from a built-in table: gpt-5 family 400k, gpt-4.1 about 1M, gpt-4o 128k, o-series 200k, minus each model's reply allowance. Unknown models are treated cautiously as 128k.
+
 ### Appearance
 
 **Settings → Appearance**: **System** (default) follows Windows' light or dark mode and switches with it; **Light** and **Dark** override it. The side panel, library and mini player all follow the choice.
@@ -112,7 +131,7 @@ It uses the model set under **Settings → Study notes and questions** (default 
 |---|---|---|
 | Transcription | `gpt-4o-mini-transcribe` | ~$0.003 per minute → about 3–4¢ for an 11-minute lecture |
 | Study notes (optional) | `gpt-5-mini` | well under 1¢ per lecture, and nothing when AI notes are off |
-| Ask (per question) | `gpt-5-mini` | well under 1¢ for an 11-minute lecture; each question re-sends the lecture as context, which OpenAI's automatic prompt caching discounts on follow-ups |
+| Ask (per question) | `gpt-5-mini` | well under 1¢ for an 11-minute lecture; each question re-sends the lecture as context, which OpenAI's automatic prompt caching discounts on follow-ups. The Ask footer shows the real token counts |
 
 These are the prices I last saw; check OpenAI's pricing page. Silent stretches aren't sent, so they cost nothing. You can switch to `gpt-4o-transcribe` (more accurate, about twice the price) or any chat model in Settings.
 

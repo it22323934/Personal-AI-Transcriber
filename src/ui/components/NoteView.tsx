@@ -268,7 +268,9 @@ export function NoteView(props: {
           />
         )}
         {tab === 'notes' && <MyNotes key={note.id} note={note} />}
-        {tab === 'ask' && <ChatPanel note={note} hasTranscript={(segments?.length ?? 0) > 0} />}
+        {tab === 'ask' && segments && (
+          <ChatPanel note={note} project={projects?.find((p) => p.id === note.projectId)} segments={segments} />
+        )}
         <div ref={endRef} />
       </div>
       {confirmEl}

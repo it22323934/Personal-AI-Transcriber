@@ -296,6 +296,16 @@ export function SettingsModal({ initial, onClose }: { initial: Settings; onClose
             </span>
           </span>
         </label>
+        <label className="switch">
+          <input type="checkbox" checked={draft.autoCompact} onChange={(e) => set('autoCompact', e.target.checked)} />
+          <span className="switch-text">
+            <strong>Compact long conversations automatically</strong>
+            <span className="field-hint">
+              When older Ask messages no longer fit what’s sent with a question, summarise them first (one small extra
+              request) so TORU keeps their gist. Otherwise the Ask tab warns you and offers a Compact button.
+            </span>
+          </span>
+        </label>
         <div className="field">
           <div className="row" style={{ justifyContent: 'space-between' }}>
             <label htmlFor="prompt" className="field-label">

@@ -17,6 +17,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoSummarize: true,
   autoSplit: true,
   recordingView: 'panel',
+  autoCompact: false,
   theme: 'system',
   summaryPrompt: DEFAULT_SUMMARY_PROMPT,
 };

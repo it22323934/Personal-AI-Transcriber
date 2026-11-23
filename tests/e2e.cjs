@@ -504,7 +504,8 @@ Microsoft Entra ID (formerly Azure Active Directory) is Azure’s cloud identity
       window.__chat = { requests: [], mode: 'stream' };
       const enc = new TextEncoder();
       // Like a real fetch body, the stream errors with AbortError when the request is aborted.
-      const sse = (pieces, delay, signal) =>
+      // With `usage`, a final usage-only chunk is sent, as OpenAI does for stream_options.include_usage.
+      const sse = (pieces, delay, signal, usage) =>
         new ReadableStream({
           async start(c) {
             let aborted = false;
@@ -517,6 +518,7 @@ Microsoft Entra ID (formerly Azure Active Directory) is Azure’s cloud identity
               if (aborted) return;
               c.enqueue(enc.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: p } }] })}\n\n`));
             }
+            if (usage) c.enqueue(enc.encode(`data: ${JSON.stringify({ choices: [], usage })}\n\n`));
             c.enqueue(enc.encode('data: [DONE]\n\n'));
             c.close();
           },
@@ -527,6 +529,12 @@ Microsoft Entra ID (formerly Azure Active Directory) is Azure’s cloud identity
         window.__chat.requests.push(body);
         const mode = window.__chat.mode;
         if (mode === 'error') return json(401, { error: { message: 'Incorrect API key provided.' } });
+        if (!body.stream && body.messages[0].content.startsWith('You compress')) {
+          return json(200, {
+            choices: [{ message: { content: '- Asked what a tenant is: a dedicated Entra ID instance [0:21].\n- Quiz so far: 3 of 4 correct; missed the licence tier for Conditional Access.' } }],
+            usage: { prompt_tokens: 900, completion_tokens: 40 },
+          });
+        }
         if (mode === 'no-stream') {
           if (body.stream) return json(400, { error: { message: 'Your organization must be verified to stream this model.' } });
           return json(200, { choices: [{ message: { content: 'Answered without streaming: a **tenant** holds identities.' } }] });
@@ -553,7 +561,8 @@ Microsoft Entra ID (formerly Azure Active Directory) is Azure’s cloud identity
           });
           return new Response(counting, { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
         }
-        return new Response(sse(['A **tenant** is ', 'a dedicated instance ', 'of Entra ID [0:21]. ', 'Each subscription trusts one tenant [0:44].'], 0, init.signal), { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+        const usage = { prompt_tokens: 4180, completion_tokens: 96, prompt_tokens_details: { cached_tokens: 3072 } };
+        return new Response(sse(['A **tenant** is ', 'a dedicated instance ', 'of Entra ID [0:21]. ', 'Each subscription trusts one tenant [0:44].'], 0, init.signal, usage), { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
       };
     });
     const messagesOf = (noteId) => panel.evaluate((noteId) => new Promise((res) => {
@@ -581,6 +590,10 @@ Microsoft Entra ID (formerly Azure Active Directory) is Azure’s cloud identity
     await sleep(400);
     let saved = await messagesOf('n1');
     check(saved.length === 2 && saved[1].role === 'assistant' && saved[1].content.includes('dedicated instance'), 'question and streamed answer are saved');
+    check(req.stream_options?.include_usage === true, 'streamed requests ask OpenAI for token usage');
+    check(saved[1].usage?.prompt === 4180 && saved[1].usage?.cached === 3072 && saved[1].promptChars > 0, 'real token usage is saved with the answer');
+    const meterText = await lib.$eval('.ask-meter', (e) => e.textContent);
+    check(/≈[\d.]+k? tokens per question · (<1|\d+)% of gpt-5-mini/.test(meterText) && meterText.includes('last 4.2k in (3.1k cached)'), `context meter shows the estimate and the last real usage (“${meterText}”)`);
 
     await lib.type('.chat-composer textarea', 'And how many tenants can a subscription trust?');
     await lib.keyboard.press('Enter');
@@ -634,6 +647,127 @@ Microsoft Entra ID (formerly Azure Active Directory) is Azure’s cloud identity
     await lib.evaluate(() => [...document.querySelectorAll('.modal button')].find((b) => b.textContent.trim() === 'Clear chat').click());
     await sleep(500);
     check((await messagesOf('n1')).length === 0, 'Clear chat removes the conversation');
+
+    // --------------------------------------- context budget and compaction
+    const seedChat = (noteId, count, startIndex = 0) => panel.evaluate((noteId, count, startIndex) => new Promise((res) => {
+      const r = indexedDB.open('toru');
+      r.onsuccess = () => {
+        const tx = r.result.transaction('messages', 'readwrite');
+        for (let i = 0; i < count; i++) {
+          const role = i % 2 === 0 ? 'user' : 'assistant';
+          const label = role === 'user' ? 'Question' : 'Answer';
+          tx.objectStore('messages').put({ noteId, index: startIndex + i, role, content: `${label} ${startIndex + i}: ${'tenant subscription identity '.repeat(140)}`, createdAt: Date.now() });
+        }
+        tx.oncomplete = res;
+      };
+    }), noteId, count, startIndex);
+    // Tell open pages that data changed behind their back (as the app's own writes do).
+    const announce = (event) => panel.evaluate((event) => new BroadcastChannel('toru-events').postMessage(event), event);
+    const patchSettings = async (patch) => {
+      await panel.evaluate((patch) => new Promise((res) => {
+        const r = indexedDB.open('toru');
+        r.onsuccess = () => {
+          const os = r.result.transaction('meta', 'readwrite').objectStore('meta');
+          const g = os.get('settings');
+          g.onsuccess = () => os.put({ key: 'settings', value: { ...g.result.value, ...patch } });
+          os.transaction.oncomplete = res;
+        };
+      }), patch);
+      await announce({ type: 'settings' });
+    };
+    const askAndWait = async (question) => {
+      const before = (await askRequests()).length;
+      await lib.type('.chat-composer textarea', question);
+      await lib.keyboard.press('Enter');
+      await lib.waitForFunction((n) => window.__chat.requests.length > n && !document.querySelector('.chat-send.stop'), { timeout: 15000 }, before);
+      await sleep(400);
+      return (await askRequests()).slice(before);
+    };
+
+    await setMode('stream');
+    await seedChat('n1', 30); // ~120k characters of conversation
+    await announce({ type: 'messages', noteId: 'n1' });
+    await sleep(600);
+    const longWarning = await lib.$eval('.chat .callout-warn', (e) => e.textContent).catch(() => '');
+    check(/\d+ older messages no longer fit and aren’t sent/.test(longWarning), `a long conversation warns that older messages aren’t sent (“${longWarning.slice(0, 60)}…”)`);
+    await shot(lib, '19c-ask-long-warning');
+
+    await lib.evaluate(() => [...document.querySelectorAll('.chat .callout button')].find((b) => b.textContent.includes('Compact conversation')).click());
+    await lib.waitForFunction(() => document.querySelector('.compaction') && !document.querySelector('.chat-send.stop'), { timeout: 10000 });
+    await sleep(400);
+    saved = await messagesOf('n1');
+    const firstCompaction = saved.find((m) => m.kind === 'compaction');
+    check(firstCompaction?.covers === 26 && firstCompaction?.index === 25.5, `Compact summarises all but the newest 4 messages (covers ${firstCompaction?.covers}, placed at ${firstCompaction?.index})`);
+    const compactReq = (await askRequests()).at(-1);
+    check(!compactReq.stream && !JSON.stringify(compactReq.messages).includes('<transcript>') && compactReq.messages[1].content.includes('Question 0:'), 'compaction is one small request, without the lecture');
+    check((await lib.$eval('.compaction-line', (e) => e.textContent)) === '26 earlier messages compacted', 'compacted messages fold under a divider');
+    check((await lib.$('.chat .callout-warn')) === null, 'the warning is gone after compacting');
+    await lib.evaluate(() => [...document.querySelectorAll('.compaction-actions button')].find((b) => b.textContent === 'Show summary').click());
+    await sleep(200);
+    check((await lib.$eval('.compaction-summary', (e) => e.textContent)).includes('3 of 4 correct'), 'the summary can be read');
+    await shot(lib, '19d-ask-compacted');
+    let [afterCompact] = await askAndWait('What did I get wrong in the quiz?');
+    check(afterCompact.messages[1].role === 'system' && afterCompact.messages[1].content.startsWith('Summary of the earlier conversation') && afterCompact.messages.length === 2 + 4 + 1, `after compacting, a question sends the summary + recent messages (${afterCompact.messages.length} messages)`);
+
+    // Automatic compaction, building on the previous summary.
+    await patchSettings({ autoCompact: true });
+    await seedChat('n1', 30, 40);
+    await announce({ type: 'messages', noteId: 'n1' });
+    await sleep(600);
+    check((await lib.$eval('.chat .callout-warn', (e) => e.textContent).catch(() => '')).includes('compacted automatically'), 'with auto-compact on, the warning says it will happen');
+    const [autoCompactReq, autoAnswerReq] = await askAndWait('Quiz me again');
+    check(!autoCompactReq.stream && autoCompactReq.messages[0].content.startsWith('You compress') && autoCompactReq.messages[1].content.includes('Summary of the conversation before these messages'), 'auto-compact runs first and builds on the previous summary');
+    check(autoAnswerReq?.stream === true && autoAnswerReq.messages[1].content.startsWith('Summary of the earlier conversation'), 'then the question is answered using the new summary');
+    saved = await messagesOf('n1');
+    const compactions = saved.filter((m) => m.kind === 'compaction');
+    check(compactions.length === 2 && compactions[1].covers === 59, `the second compaction covers everything older (covers ${compactions[1]?.covers})`);
+    await patchSettings({ autoCompact: false });
+
+    // "Study notes only": the transcript isn't sent.
+    await lib.click('button[role="combobox"][aria-label="What the AI reads"]');
+    await sleep(200);
+    await lib.evaluate(() => [...document.querySelectorAll('[role="option"]')].find((o) => o.textContent.includes('Study notes only')).click());
+    await sleep(400);
+    check((await readDb('notes', 'n1')).askContext === 'notes', '“Study notes only” is saved on the lecture');
+    const [notesOnlyReq] = await askAndWait('Short recap?');
+    check(notesOnlyReq.messages[0].content.includes('<transcript_not_included>') && !notesOnlyReq.messages[0].content.includes('<transcript>'), 'with study notes only, the transcript is left out of the request');
+    await lib.click('button[role="combobox"][aria-label="What the AI reads"]');
+    await sleep(200);
+    await lib.evaluate(() => [...document.querySelectorAll('[role="option"]')].find((o) => o.textContent.includes('Full transcript')).click());
+    await sleep(300);
+
+    // A small-context model: a long lecture is trimmed, and very large questions warn.
+    await panel.evaluate(() => new Promise((res) => {
+      const r = indexedDB.open('toru');
+      r.onsuccess = () => {
+        const tx = r.result.transaction(['notes', 'segments'], 'readwrite');
+        tx.objectStore('notes').put({ id: 'long1', projectId: 'p-entra', title: 'All-day Azure workshop', sourceUrl: '', createdAt: Date.now() - 5000, updatedAt: Date.now(), durationMs: 4 * 3600e3, status: 'done', myNotes: '', summary: '## TL;DR\nA full day on Azure identity.' });
+        for (let i = 0; i < 200; i++) tx.objectStore('segments').put({ noteId: 'long1', index: i, startMs: i * 72e3, endMs: (i + 1) * 72e3, text: `Part ${i}. `.padEnd(400, 'identity governance subscription tenant ') });
+        tx.oncomplete = res;
+      };
+    }));
+    await patchSettings({ summaryModel: 'gpt-3.5-turbo' });
+    await lib.goto(`chrome-extension://${extId}/library.html#/note/long1`, { waitUntil: 'networkidle0' });
+    await clickTab('Ask');
+    await sleep(500);
+    const trimmedWarning = await lib.$eval('.chat .callout-warn', (e) => e.textContent).catch(() => '');
+    check(trimmedWarning.includes('too long to send in full') && trimmedWarning.includes('Use study notes only'), 'a lecture too long for the model warns and offers study notes only');
+    check((await lib.$eval('.ask-meter', (e) => e.textContent)).includes('of gpt-3.5-turbo'), 'the meter measures against the chosen model');
+    const setDraftText = (text) => lib.evaluate((text) => {
+      const ta = document.querySelector('.chat-composer textarea');
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(ta, text);
+      ta.dispatchEvent(new Event('input', { bubbles: true }));
+    }, text);
+    await setDraftText('x '.repeat(4000));
+    await sleep(300);
+    check(await lib.$eval('.ask-meter', (e) => e.classList.contains('warn')), 'the meter turns amber past 70% of the model’s limit');
+    await setDraftText('x '.repeat(10000));
+    await sleep(300);
+    const fullWarning = await lib.$eval('.chat .callout-error', (e) => e.textContent).catch(() => '');
+    check((await lib.$eval('.ask-meter', (e) => e.classList.contains('full'))) && fullWarning.includes('of what gpt-3.5-turbo can take'), 'past 90% the meter turns red and warns');
+    await shot(lib, '19e-ask-near-limit');
+    await setDraftText('');
+    await patchSettings({ summaryModel: 'gpt-5-mini' });
 
     // ------------------------------------------------------ light / dark
     const bgOf = (page) => page.evaluate(() => getComputedStyle(document.body).backgroundColor);

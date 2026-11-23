@@ -1599,3 +1599,95 @@ mark {
 .link-quiet:hover {
   color: var(--text);
 }
+
+/* ------------------------------------------------- ask: context meter */
+
+.chat-foot {
+  flex-wrap: wrap;
+  align-items: center;
+  row-gap: 6px;
+}
+.chat-foot-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+}
+.ask-meter {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  cursor: help;
+}
+.meter-bar {
+  position: relative;
+  flex: none;
+  width: 36px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--surface-active);
+  overflow: hidden;
+}
+.meter-bar > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 3px;
+  background: var(--meter);
+  transition: width 0.25s;
+}
+.ask-meter.warn .meter-bar > span {
+  background: var(--amber);
+}
+.ask-meter.full .meter-bar > span {
+  background: var(--red);
+}
+.ask-meter.warn {
+  color: var(--amber);
+}
+.ask-meter.full {
+  color: var(--red-text);
+}
+
+/* --------------------------------------------- ask: compacted history */
+
+.compaction {
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  text-align: center;
+}
+.compaction-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  color: var(--text-3);
+  font-size: 12px;
+}
+.compaction-line::before,
+.compaction-line::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--line-strong);
+}
+.compaction-actions {
+  display: flex;
+  gap: 14px;
+}
+.compaction-summary {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  text-align: left;
+}
+.compaction-summary .md {
+  font-size: 13px;
+}
+.msg-earlier {
+  opacity: 0.55;
+}

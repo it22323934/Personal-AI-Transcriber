@@ -1,15 +1,22 @@
-// The "Ask" tab: a conversation about one lecture, grounded in its transcript.
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { SUGGESTED_QUESTIONS } from '../../lib/chat';
+// The "Ask" tab: a conversation about one lecture, grounded in its transcript,
+// with a context meter, warnings when the conversation outgrows what's sent,
+// and compaction of older messages.
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { buildLecture, planAsk, SUGGESTED_QUESTIONS, tokensPerChar, type AskPlan } from '../../lib/chat';
 import { errorMessage } from '../../lib/format';
+import { formatTokens } from '../../lib/models';
 import * as store from '../../lib/store';
-import type { ChatMessage, Note } from '../../lib/types';
-import { startAsk, stopAsk, useAskJob } from '../askJobs';
+import type { ChatMessage, Note, Project, Segment } from '../../lib/types';
+import { startAsk, startCompact, stopAsk, useAskJob } from '../askJobs';
 import { useLive, useSettings } from '../hooks';
 import { IconCopy, IconRefresh, IconSparkle, IconStop } from '../icons';
 import { Markdown } from '../Markdown';
 import { toast } from '../toast';
 import { useConfirm } from './Modal';
+import { Select } from './Select';
+
+const WARN_SHARE = 0.7;
+const FULL_SHARE = 0.9;
 
 function IconSend({ size = 16 }: { size?: number }) {
   return (
@@ -36,7 +43,11 @@ function useStickToBottom(trigger: unknown) {
   }, [trigger]);
 }
 
-export function ChatPanel({ note, hasTranscript }: { note: Note; hasTranscript: boolean }) {
+const lastCompactionAt = (messages: ChatMessage[]) => messages.findLastIndex((m) => m.kind === 'compaction');
+
+export function ChatPanel(props: { note: Note; project?: Project; segments: Segment[] }) {
+  const { note, project, segments } = props;
+  const hasTranscript = segments.length > 0;
   const messages = useLive(
     () => store.getMessages(note.id),
     [note.id],
@@ -45,10 +56,13 @@ export function ChatPanel({ note, hasTranscript }: { note: Note; hasTranscript: 
   const job = useAskJob(note.id);
   const settings = useSettings();
   const [draft, setDraft] = useState('');
+  const [showSummary, setShowSummary] = useState(false);
+  const [showEarlier, setShowEarlier] = useState(false);
   const input = useRef<HTMLTextAreaElement>(null);
   const { confirm, element: confirmEl } = useConfirm();
+  const model = settings?.summaryModel ?? 'gpt-5-mini';
 
-  useStickToBottom(`${messages?.length ?? 0}|${job?.text.length ?? -1}`);
+  useStickToBottom(`${messages?.length ?? 0}|${job?.text.length ?? -1}|${job?.status}`);
 
   useLayoutEffect(() => {
     const el = input.current;
@@ -56,6 +70,14 @@ export function ChatPanel({ note, hasTranscript }: { note: Note; hasTranscript: 
     el.style.height = '0px';
     el.style.height = `${Math.min(160, el.scrollHeight)}px`;
   }, [draft]);
+
+  // The lecture text is the big part; build it once per change, not per keystroke.
+  const ratio = useMemo(() => tokensPerChar(messages ?? []), [messages]);
+  const lecture = useMemo(() => buildLecture(note, project, segments, model, ratio), [note, project, segments, model, ratio]);
+  const plan = useMemo(
+    () => (messages ? planAsk({ note, project, segments, messages, model, draft, lecture }) : undefined),
+    [note, project, segments, messages, model, draft, lecture],
+  );
 
   const busy = !!job;
   const send = (text: string) => {
@@ -68,6 +90,16 @@ export function ChatPanel({ note, hasTranscript }: { note: Note; hasTranscript: 
     setDraft('');
     startAsk(note.id, q);
   };
+
+  const compact = () => {
+    if (!settings?.apiKey) {
+      toast('Add your OpenAI API key in Settings first.', 'error');
+      return;
+    }
+    startCompact(note.id, (message) => toast(`Couldn’t compact: ${message}`, 'error'));
+  };
+
+  const setNotesOnly = (on: boolean) => void store.updateNote(note.id, { askContext: on ? 'notes' : 'transcript' });
 
   const clear = async () => {
     const ok = await confirm({
@@ -88,10 +120,16 @@ export function ChatPanel({ note, hasTranscript }: { note: Note; hasTranscript: 
     }
   };
 
-  if (!messages) return null;
+  if (!messages || !plan) return null;
   const last = messages.at(-1);
   const unanswered = !busy && last?.role === 'user';
   const empty = messages.length === 0 && !busy;
+  const ci = lastCompactionAt(messages);
+  const compaction = ci >= 0 ? messages[ci] : undefined;
+  const earlier = ci >= 0 ? messages.slice(0, ci).filter((m) => m.kind !== 'compaction') : [];
+  const recent = messages.slice(ci + 1);
+  const canCompact = plan.compactable >= 2 && !busy;
+  const canUseNotes = !!note.summary?.trim() && !plan.notesOnly;
 
   return (
     <div className="chat">
@@ -118,13 +156,46 @@ export function ChatPanel({ note, hasTranscript }: { note: Note; hasTranscript: 
         </div>
       ) : (
         <div className="chat-log" aria-live="polite">
-          {messages.map((m) => (
+          {showEarlier &&
+            earlier.map((m) => (
+              <div key={m.index} className="msg-earlier">
+                <Message message={m} onCopy={copy} onRetry={() => {}} canRetry={false} />
+              </div>
+            ))}
+          {compaction && (
+            <div className="compaction">
+              <div className="compaction-line">
+                <span>
+                  {compaction.covers ?? earlier.length} earlier message{(compaction.covers ?? earlier.length) === 1 ? '' : 's'} compacted
+                </span>
+              </div>
+              <div className="compaction-actions">
+                <button className="link-quiet" onClick={() => setShowSummary((s) => !s)}>
+                  {showSummary ? 'Hide summary' : 'Show summary'}
+                </button>
+                {earlier.length > 0 && (
+                  <button className="link-quiet" onClick={() => setShowEarlier((s) => !s)}>
+                    {showEarlier ? 'Hide messages' : 'Show messages'}
+                  </button>
+                )}
+              </div>
+              {showSummary && (
+                <div className="compaction-summary">
+                  <Markdown text={compaction.content} />
+                </div>
+              )}
+            </div>
+          )}
+          {recent.map((m) => (
             <Message key={m.index} message={m} onCopy={copy} onRetry={() => startAsk(note.id)} canRetry={!busy && m === last} />
           ))}
-          {job && (
-            <div className="msg msg-ai">
-              {job.text ? <Markdown text={job.text} /> : <Thinking />}
+          {job?.status === 'compacting' && (
+            <div className="row faint" style={{ fontSize: 13 }}>
+              <span className="spinner" /> Compacting the conversation…
             </div>
+          )}
+          {job?.status === 'answering' && (
+            <div className="msg msg-ai">{job.text ? <Markdown text={job.text} /> : <Thinking />}</div>
           )}
           {unanswered && (
             <div className="callout">
@@ -140,6 +211,14 @@ export function ChatPanel({ note, hasTranscript }: { note: Note; hasTranscript: 
           )}
         </div>
       )}
+
+      <ContextWarning
+        plan={plan}
+        model={model}
+        autoCompact={!!settings?.autoCompact}
+        onCompact={canCompact ? compact : undefined}
+        onNotesOnly={canUseNotes ? () => setNotesOnly(true) : undefined}
+      />
 
       <form
         className="chat-composer"
@@ -164,26 +243,128 @@ export function ChatPanel({ note, hasTranscript }: { note: Note; hasTranscript: 
           }}
         />
         {busy ? (
-          <button type="button" className="chat-send stop" onClick={() => stopAsk(note.id)} aria-label="Stop answering" title="Stop">
+          <button type="button" className="chat-send stop" onClick={() => stopAsk(note.id)} aria-label="Stop" title="Stop">
             <IconStop size={13} />
           </button>
         ) : (
-          <button type="submit" className="chat-send" disabled={!draft.trim() || !hasTranscript} aria-label="Send" title="Send (Enter)">
+          <button type="submit" className="chat-send" disabled={!draft.trim() || !hasTranscript} aria-label="Send" title="Send (Enter) · Shift+Enter for a new line">
             <IconSend />
           </button>
         )}
       </form>
       <div className="chat-foot">
-        <span>
-          Uses your OpenAI credits{settings ? ` · ${settings.summaryModel}` : ''}. Shift+Enter for a new line.
-        </span>
-        {messages.length > 0 && !busy && (
-          <button className="link-quiet" onClick={clear}>
-            Clear chat
-          </button>
-        )}
+        <ContextMeter plan={plan} model={model} messages={messages} />
+        <div className="chat-foot-actions">
+          {note.summary?.trim() && (
+            <Select
+              variant="chip"
+              ariaLabel="What the AI reads"
+              title="What the AI reads for each question"
+              value={plan.notesOnly ? 'notes' : 'transcript'}
+              options={[
+                { value: 'transcript', label: 'Full transcript', description: 'Best answers, can cite times' },
+                { value: 'notes', label: 'Study notes only', description: 'Much cheaper for long lectures' },
+              ]}
+              onChange={(v) => setNotesOnly(v === 'notes')}
+              listMinWidth={240}
+            />
+          )}
+          {canCompact && (
+            <button className="link-quiet" onClick={compact} title={`Summarise the ${plan.compactable} older messages so later questions send less`}>
+              Compact
+            </button>
+          )}
+          {messages.length > 0 && !busy && (
+            <button className="link-quiet" onClick={clear}>
+              Clear chat
+            </button>
+          )}
+        </div>
       </div>
       {confirmEl}
+    </div>
+  );
+}
+
+function ContextMeter({ plan, model, messages }: { plan: AskPlan; model: string; messages: ChatMessage[] }) {
+  const pct = Math.round(plan.share * 100);
+  const level = plan.share >= FULL_SHARE ? 'full' : plan.share >= WARN_SHARE ? 'warn' : 'ok';
+  const lastUsage = [...messages].reverse().find((m) => m.usage)?.usage;
+  const details = [
+    `Each question sends about ${formatTokens(plan.estimatedTokens)} tokens to ${model}:`,
+    `• the lecture: ${formatTokens(plan.lectureTokens)} (${plan.notesOnly ? 'study notes only' : 'with the full transcript'})`,
+    `• the conversation: ${formatTokens(plan.historyTokens)}`,
+    `A request to ${model} can hold ${formatTokens(plan.limit)} tokens${plan.limitKnown ? '' : ' (unknown model, so a cautious limit is assumed)'}.`,
+    lastUsage
+      ? `Last answer: ${lastUsage.prompt.toLocaleString()} tokens in (${lastUsage.cached.toLocaleString()} cached, billed at a discount), ${lastUsage.completion.toLocaleString()} out.`
+      : '',
+    'Uses your OpenAI credits.',
+  ]
+    .filter(Boolean)
+    .join('\n');
+  return (
+    <div className={`ask-meter ${level}`} title={details} aria-label={details}>
+      <span className="meter-bar" aria-hidden="true">
+        <span style={{ width: `${Math.max(2, Math.min(100, pct))}%` }} />
+      </span>
+      <span>
+        ≈{formatTokens(plan.estimatedTokens)} tokens per question · {pct < 1 ? '<1' : pct}% of {model}
+      </span>
+      {lastUsage && (
+        <span className="faint">
+          · last {formatTokens(lastUsage.prompt)} in{lastUsage.cached ? ` (${formatTokens(lastUsage.cached)} cached)` : ''}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** One warning at a time, most serious first, each with the action that fixes it. */
+function ContextWarning(props: {
+  plan: AskPlan;
+  model: string;
+  autoCompact: boolean;
+  onCompact?: () => void;
+  onNotesOnly?: () => void;
+}) {
+  const { plan, model } = props;
+  const pct = Math.round(plan.share * 100);
+  let tone: 'error' | 'warn' = 'warn';
+  let text = '';
+  if (plan.share >= FULL_SHARE) {
+    tone = 'error';
+    text = `This question would use ${pct}% of what ${model} can take in one request. Older messages are left out to make it fit.`;
+  } else if (plan.transcriptTrimmed) {
+    text = `This lecture is too long to send in full, so the middle of the transcript is left out. Use the study notes only, or pick a model with a bigger context in Settings.`;
+  } else if (plan.share >= WARN_SHARE) {
+    text = `This conversation uses ${pct}% of what ${model} can take in one request.`;
+  } else if (plan.droppedMessages > 0) {
+    const n = plan.droppedMessages;
+    text = props.autoCompact
+      ? `${n} older message${n === 1 ? '' : 's'} no longer fit${n === 1 ? 's' : ''}. They’ll be compacted automatically with your next question.`
+      : `${n} older message${n === 1 ? '' : 's'} no longer fit${n === 1 ? 's' : ''} and ${n === 1 ? 'isn’t' : 'aren’t'} sent, so TORU won’t remember ${n === 1 ? 'it' : 'them'}. Compact the conversation to keep the gist.`;
+  }
+  if (!text) return null;
+  const showCompact = props.onCompact && !(plan.droppedMessages > 0 && props.autoCompact && plan.share < WARN_SHARE);
+  return (
+    <div className={`callout callout-${tone}`} role="status">
+      <div className="callout-body">
+        <span>{text}</span>
+        {(showCompact || props.onNotesOnly) && (
+          <div className="callout-actions">
+            {showCompact && (
+              <button className="btn btn-sm btn-light" onClick={props.onCompact}>
+                Compact conversation
+              </button>
+            )}
+            {props.onNotesOnly && (plan.transcriptTrimmed || plan.share >= WARN_SHARE) && (
+              <button className="btn btn-sm" onClick={props.onNotesOnly}>
+                Use study notes only
+              </button>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
