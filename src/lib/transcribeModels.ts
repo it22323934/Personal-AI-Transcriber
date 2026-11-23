@@ -1,25 +1,17 @@
-// Which OpenAI transcription model to call, and how each one takes its hints.
+// TORU transcribes with gpt-transcribe, OpenAI's current transcription model.
+// The older ones (gpt-4o-transcribe, gpt-4o-mini-transcribe, whisper-1) aren't
+// used: a setting that still names one moves to gpt-transcribe straight away.
 // No imports, so it can be unit-tested directly with Node.
 
-/** OpenAI's recommended transcription model (since 2026). */
-export const RECOMMENDED_TRANSCRIBE_MODEL = 'gpt-transcribe';
+export const TRANSCRIBE_MODEL = 'gpt-transcribe';
 
-/** Older transcription models: OpenAI shuts them down on 26 February 2027. */
-export const DEPRECATED_TRANSCRIBE_MODELS = ['gpt-4o-mini-transcribe', 'gpt-4o-transcribe', 'gpt-4o-transcribe-diarize', 'whisper-1'];
-export const TRANSCRIBE_SHUTDOWN = Date.UTC(2027, 1, 26);
+/** OpenAI's earlier transcription models, deprecated in 2026 and shut down on 26 February 2027. */
+const RETIRED = /^(whisper-1|gpt-4o(-mini)?-transcribe(-diarize)?)$/i;
 
-export function isDeprecatedTranscribeModel(model: string): boolean {
-  return DEPRECATED_TRANSCRIBE_MODELS.includes(model.trim());
-}
-
-/** The model to actually call: a deprecated one is replaced once it has been shut down. */
-export function effectiveTranscribeModel(model: string, now = Date.now()): string {
-  return isDeprecatedTranscribeModel(model) && now >= TRANSCRIBE_SHUTDOWN ? RECOMMENDED_TRANSCRIBE_MODEL : model;
-}
-
-/** gpt-transcribe (and its successors) take a `languages` list and `keywords`; older models one `language` and a prompt. */
-export function takesLanguageList(model: string): boolean {
-  return /^gpt-(live-)?transcribe/.test(model.trim());
+/** The model to use for a saved setting: gpt-transcribe, or a newer model id someone typed in. */
+export function transcribeModelFor(saved: string | undefined): string {
+  const model = (saved ?? '').trim();
+  return !model || RETIRED.test(model) ? TRANSCRIBE_MODEL : model;
 }
 
 /** Keywords as the API accepts them: one term each, no angle brackets or line breaks (or the whole request is rejected). */

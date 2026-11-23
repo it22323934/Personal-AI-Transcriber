@@ -125,7 +125,8 @@ Microsoft Entra ID (formerly Azure Active Directory) is Azure’s cloud identity
       await put('projects', seed.projects);
       await put('notes', seed.notes);
       await put('segments', seed.segments);
-      await put('meta', [{ key: 'settings', value: { apiKey: 'sk-test-1234567890', lastProjectId: 'p-entra' } }]);
+      // Saved by an older version, naming the old model: TORU must use gpt-transcribe anyway.
+      await put('meta', [{ key: 'settings', value: { apiKey: 'sk-test-1234567890', lastProjectId: 'p-entra', transcribeModel: 'gpt-4o-mini-transcribe' } }]);
       db.close();
     }, seed);
 
@@ -271,7 +272,7 @@ Microsoft Entra ID (formerly Azure Active Directory) is Azure’s cloud identity
     const calls = await off.evaluate(() => window.__calls);
     const tcalls = calls.filter((c) => c.kind === 'transcribe');
     check(tcalls.every((c) => c.header === 'RIFF' && c.size > 400_000 && c.size < 1_100_000), `chunks are WAV, 15–30 s long (${tcalls.map((c) => Math.round(c.size / 32000) + 's').join(', ')})`);
-    check(tcalls.every((c) => c.model === 'gpt-transcribe' && c.languages.join() === 'en' && c.language === null && c.auth === 'Bearer sk-test-1234567890'), 'transcription uses gpt-transcribe, the project language and the API key');
+    check(tcalls.every((c) => c.model === 'gpt-transcribe' && c.languages.join() === 'en' && c.language === null && c.auth === 'Bearer sk-test-1234567890'), 'transcription uses gpt-transcribe (not the old saved model), the project language and the API key');
     check(tcalls[0].keywords.includes('Entra ID') && tcalls[0].keywords.includes('Conditional Access') && !(tcalls[0].prompt || '').includes('Glossary'), 'project vocabulary sent as keywords');
     check(!tcalls[1] || tcalls[1].prompt.includes('user identities'), 'previous text carried into next chunk prompt');
     const durMs = (await readDb('notes', note1)).durationMs;
@@ -815,18 +816,19 @@ Microsoft Entra ID (formerly Azure Active Directory) is Azure’s cloud identity
     await sleep(400);
 
     // Model field suggestions (custom list, not the browser's).
-    await lib.click('#tmodel', { count: 3 });
-    await lib.keyboard.type('whis');
+    check((await lib.$eval('#tmodel', (e) => e.value)) === 'gpt-transcribe', 'Settings shows gpt-transcribe, not the old saved model');
+    await lib.click('#smodel', { count: 3 });
+    await lib.keyboard.type('nano');
     await sleep(250);
     const modelOptions = await lib.evaluate(() => [...document.querySelectorAll('[role="listbox"] [role="option"]')].map((o) => o.querySelector('.option-label').textContent));
-    check(modelOptions.length === 1 && modelOptions[0] === 'whisper-1', `model suggestions filter as you type (${modelOptions.join(', ')})`);
+    check(modelOptions.length === 1 && modelOptions[0] === 'gpt-5-nano', `model suggestions filter as you type (${modelOptions.join(', ')})`);
     await shot(lib, '23-light-settings');
     await lib.keyboard.press('Enter');
-    check((await lib.$eval('#tmodel', (e) => e.value)) === 'whisper-1', 'Enter picks the suggestion');
+    check((await lib.$eval('#smodel', (e) => e.value)) === 'gpt-5-nano', 'Enter picks the suggestion');
     await lib.evaluate(() => [...document.querySelectorAll('.modal button')].find((b) => b.textContent.trim() === 'Cancel').click());
     await sleep(300);
     const savedTheme = (await readDb('meta', 'settings')).value;
-    check(savedTheme.theme === 'light' && savedTheme.transcribeModel !== 'whisper-1', 'theme saves straight away; other fields only on Save');
+    check(savedTheme.theme === 'light' && savedTheme.summaryModel !== 'gpt-5-nano', 'theme saves straight away; other fields only on Save');
   } catch (e) {
     failures++;
     console.error('ERROR', e);

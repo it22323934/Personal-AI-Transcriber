@@ -1,5 +1,5 @@
 import { stripPromptCopy } from './promptCopy';
-import { cleanKeywords, effectiveTranscribeModel, takesLanguageList } from './transcribeModels';
+import { cleanKeywords, transcribeModelFor } from './transcribeModels';
 import type { TokenUsage } from './types';
 
 const API = 'https://api.openai.com/v1';
@@ -63,21 +63,14 @@ export async function transcribe(opts: {
   /** Context: the end of what was said before, and how to write it. */
   prompt?: string;
 }): Promise<string> {
-  const model = effectiveTranscribeModel(opts.model);
   const languages = (opts.languages ?? []).filter(Boolean);
-  const keywords = cleanKeywords(opts.keywords);
   const form = new FormData();
   form.append('file', opts.audio, opts.name ?? 'audio.wav');
-  form.append('model', model);
+  form.append('model', transcribeModelFor(opts.model));
   form.append('response_format', 'json');
-  let prompt = opts.prompt?.trim() ?? '';
-  if (takesLanguageList(model)) {
-    for (const code of languages) form.append('languages[]', code);
-    for (const term of keywords) form.append('keywords[]', term);
-  } else {
-    if (languages[0]) form.append('language', languages[0]);
-    if (keywords.length) prompt = [`Glossary: ${keywords.join(', ')}.`, prompt].filter(Boolean).join('\n');
-  }
+  for (const code of languages) form.append('languages[]', code);
+  for (const term of cleanKeywords(opts.keywords)) form.append('keywords[]', term);
+  const prompt = opts.prompt?.trim() ?? '';
   if (prompt) form.append('prompt', prompt);
   const res = await request('/audio/transcriptions', opts.apiKey, { method: 'POST', body: form });
   const body = await res.json();

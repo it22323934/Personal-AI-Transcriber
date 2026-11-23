@@ -145,13 +145,13 @@ TORU transcribes about 80 languages, and can write the study notes in a differen
 
 | Part | Default model | Roughly |
 |---|---|---|
-| Transcription | `gpt-transcribe` | check OpenAI's pricing page; the older `gpt-4o-mini-transcribe` was ~$0.003 per minute, about 3–4¢ for an 11-minute lecture |
+| Transcription | `gpt-transcribe` | per minute of speech; check OpenAI's pricing page for the current rate |
 | Study notes (optional) | `gpt-5-mini` | well under 1¢ per lecture, and nothing when AI notes are off |
 | Ask (per question) | `gpt-5-mini` | well under 1¢ for an 11-minute lecture; each question re-sends the lecture as context, which OpenAI's automatic prompt caching discounts on follow-ups. The Ask footer shows the real token counts |
 
 These are the prices I last saw; check OpenAI's pricing page. Silent stretches aren't sent, so they cost nothing.
 
-**Transcription models.** OpenAI shuts down `gpt-4o-mini-transcribe`, `gpt-4o-transcribe` and `whisper-1` on **26 February 2027**. New setups use `gpt-transcribe`, OpenAI's current model. If Settings still names an older one, it shows a **Switch** button, and after that date TORU switches by itself.
+**Transcription model.** TORU uses `gpt-transcribe`, OpenAI's current transcription model, and nothing older. If your settings were saved by an earlier version with `gpt-4o-mini-transcribe`, `gpt-4o-transcribe` or `whisper-1` (which OpenAI shuts down on 26 February 2027), TORU uses `gpt-transcribe` instead, with no action needed.
 
 ## Your data
 
@@ -171,7 +171,7 @@ These are the prices I last saw; check OpenAI's pricing page. Silent stretches a
 | Can't record a page | Chrome blocks its own pages (`chrome://`, Web Store). Normal web pages work |
 | "Nothing is playing in the recorded tab" | Play the video and check it isn't muted (in the player or on the tab) |
 | "Nothing was heard … so no note was saved" | The recording had no speech. Check the video's sound, then record again |
-| Test says OpenAI refused a transcription | Read the message. A language may not be accepted by that model: choose Auto-detect or another model |
+| Test says OpenAI refused a transcription | Read the message. If it's about the language, choose Auto-detect for now, or another language close to it |
 | A Sinhala (or other) lecture comes back in English letters or translated | Set the **Spoken language** for the project or in Settings; Auto-detect can mistake it |
 | The same sentences appear twice in an older note | On quiet audio the transcriber sometimes returned the context TORU gave it. New recordings drop that copied text |
 
@@ -216,7 +216,7 @@ The **Ask** tab talks to OpenAI directly from the page you're on (streamed chat 
 
 ### Transcription requests
 
-Each 15–30 s chunk is sent to `/v1/audio/transcriptions`. With `gpt-transcribe` the request carries `languages[]` (the chosen language, plus English when it's another language), `keywords[]` (the project's vocabulary) and a short `prompt` (the script to use and the last ~200 characters said). Older models get one `language`, with the vocabulary as a "Glossary" line in the prompt. Any sentence of the reply that copies the prompt is dropped (`src/lib/promptCopy.ts`). The language table is `src/lib/languages.ts`.
+Each 15–30 s chunk is sent to `/v1/audio/transcriptions`. It always goes to `gpt-transcribe`, with `languages[]` (the chosen language, plus English when it's another language), `keywords[]` (the project's vocabulary) and a short `prompt` (the script to use and the last ~200 characters said). Older model names in saved settings are replaced with `gpt-transcribe` (`src/lib/transcribeModels.ts`). Any sentence of the reply that copies the prompt is dropped (`src/lib/promptCopy.ts`). The language table is `src/lib/languages.ts`.
 
 | Path | What's there |
 |---|---|

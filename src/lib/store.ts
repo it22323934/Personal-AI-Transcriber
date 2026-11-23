@@ -3,7 +3,7 @@
 import * as db from './db';
 import { emit } from './events';
 import { DEFAULT_SUMMARY_PROMPT } from './prompts';
-import { RECOMMENDED_TRANSCRIBE_MODEL } from './transcribeModels';
+import { TRANSCRIBE_MODEL, transcribeModelFor } from './transcribeModels';
 import type { ChatMessage, Note, PendingChunk, Project, RecordingState, Segment, Settings } from './types';
 
 export const INBOX_ID = 'inbox';
@@ -12,7 +12,7 @@ export const PROJECT_COLORS = ['#c9dc4c', '#7cc4e8', '#f0a07c', '#b9a3f0', '#e8c
 
 export const DEFAULT_SETTINGS: Settings = {
   apiKey: '',
-  transcribeModel: RECOMMENDED_TRANSCRIBE_MODEL,
+  transcribeModel: TRANSCRIBE_MODEL,
   summaryModel: 'gpt-5-mini',
   language: '',
   notesLanguage: 'en',
@@ -35,9 +35,14 @@ export function uid(): string {
 
 // ---------------------------------------------------------------- settings
 
+/** Settings saved with an older transcription model (gpt-4o-…, whisper-1) use gpt-transcribe. */
+function withCurrentModel(settings: Settings): Settings {
+  return { ...settings, transcribeModel: transcribeModelFor(settings.transcribeModel) };
+}
+
 export async function getSettings(): Promise<Settings> {
   const row = await db.get<MetaRow<Partial<Settings>>>('meta', 'settings');
-  return { ...DEFAULT_SETTINGS, ...(row?.value ?? {}) };
+  return withCurrentModel({ ...DEFAULT_SETTINGS, ...(row?.value ?? {}) });
 }
 
 export async function saveSettings(patch: Partial<Settings>): Promise<Settings> {
@@ -46,7 +51,7 @@ export async function saveSettings(patch: Partial<Settings>): Promise<Settings> 
     value: { ...(cur?.value ?? {}), ...patch },
   }));
   emit({ type: 'settings' });
-  return { ...DEFAULT_SETTINGS, ...(row?.value ?? {}) };
+  return withCurrentModel({ ...DEFAULT_SETTINGS, ...(row?.value ?? {}) });
 }
 
 // --------------------------------------------------------------- recording

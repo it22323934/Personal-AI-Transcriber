@@ -10,16 +10,11 @@ import { IconCheck, IconDownload, IconEye, IconEyeOff, IconUpload } from '../ico
 import { toast } from '../toast';
 import { applyTheme } from '../theme';
 import { getLanguage, languageOptions } from '../../lib/languages';
-import { isDeprecatedTranscribeModel, RECOMMENDED_TRANSCRIBE_MODEL } from '../../lib/transcribeModels';
+import { transcribeModelFor } from '../../lib/transcribeModels';
 import { Modal, useConfirm } from './Modal';
 import { ComboInput, Select } from './Select';
 
-const TRANSCRIBE_MODELS = [
-  { value: 'gpt-transcribe', description: 'OpenAI’s current model (default)' },
-  { value: 'gpt-4o-mini-transcribe', description: 'Older, low cost · shuts down 26 Feb 2027' },
-  { value: 'gpt-4o-transcribe', description: 'Older · shuts down 26 Feb 2027' },
-  { value: 'whisper-1', description: 'The original Whisper · shuts down 26 Feb 2027' },
-];
+const TRANSCRIBE_MODELS = [{ value: 'gpt-transcribe', description: 'OpenAI’s current transcription model' }];
 const SUMMARY_MODELS = [
   { value: 'gpt-5-mini', description: 'Balanced quality and cost (default)' },
   { value: 'gpt-5', description: 'Best answers, slower and pricier' },
@@ -49,7 +44,7 @@ export function SettingsModal({ initial, onClose }: { initial: Settings; onClose
   async function testKey() {
     setTest({ state: 'testing' });
     const key = draft.apiKey.trim();
-    const model = draft.transcribeModel.trim() || store.DEFAULT_SETTINGS.transcribeModel;
+    const model = transcribeModelFor(draft.transcribeModel);
     const lang = getLanguage(draft.language);
     const inLang = lang ? ` in ${lang.name}` : '';
     try {
@@ -76,7 +71,7 @@ export function SettingsModal({ initial, onClose }: { initial: Settings; onClose
       await store.saveSettings({
         ...draft,
         apiKey: draft.apiKey.trim(),
-        transcribeModel: draft.transcribeModel.trim() || store.DEFAULT_SETTINGS.transcribeModel,
+        transcribeModel: transcribeModelFor(draft.transcribeModel),
         summaryModel: draft.summaryModel.trim() || store.DEFAULT_SETTINGS.summaryModel,
       });
       toast('Settings saved');
@@ -241,21 +236,6 @@ export function SettingsModal({ initial, onClose }: { initial: Settings; onClose
             />
           </div>
         </div>
-        {isDeprecatedTranscribeModel(draft.transcribeModel) && (
-          <div className="callout callout-warn">
-            <div className="callout-body">
-              <span>
-                OpenAI shuts down {draft.transcribeModel} on 26 February 2027. After that date TORU uses{' '}
-                {RECOMMENDED_TRANSCRIBE_MODEL} instead.
-              </span>
-              <div className="callout-actions">
-                <button className="btn btn-sm btn-light" onClick={() => set('transcribeModel', RECOMMENDED_TRANSCRIBE_MODEL)}>
-                  Switch to {RECOMMENDED_TRANSCRIBE_MODEL} now
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
         <div className="field-hint">
           For anything other than English, choose the language: TORU asks for its own script (සිංහල, தமிழ், हिन्दी…)
           and keeps English terms in English. Languages marked “less accurate” work, but expect more mistakes. Projects
