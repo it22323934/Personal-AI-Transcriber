@@ -24,7 +24,7 @@ export function useLive<T>(load: () => Promise<T>, deps: unknown[], matches: (e:
         (v) => {
           if (alive && mine === seq) setValue(v);
         },
-        (e) => console.error('[earmark] load failed', e),
+        (e) => console.error('[toru] load failed', e),
       );
     };
     setValue(undefined);

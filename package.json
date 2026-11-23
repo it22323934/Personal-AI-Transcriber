@@ -1,5 +1,5 @@
 {
-  "name": "earmark",
+  "name": "toru",
   "private": true,
   "version": "0.1.0",
   "description": "Chrome side-panel extension that records a tab's audio, transcribes it with OpenAI and writes AI study notes, organised into projects.",

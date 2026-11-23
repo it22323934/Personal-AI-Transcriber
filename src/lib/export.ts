@@ -37,7 +37,7 @@ export function projectToMarkdown(project: Project, notes: Note[]): string {
 }
 
 export function safeFilename(name: string): string {
-  return name.replace(/[\\/:*?"<>|]+/g, '').replace(/\s+/g, ' ').trim().slice(0, 80) || 'earmark';
+  return name.replace(/[\\/:*?"<>|]+/g, '').replace(/\s+/g, ' ').trim().slice(0, 80) || 'toru';
 }
 
 export function downloadFile(filename: string, content: string, type = 'text/markdown'): void {

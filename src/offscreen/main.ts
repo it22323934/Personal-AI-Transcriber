@@ -89,7 +89,7 @@ class NoteSession {
   }
 
   private enqueue(task: () => Promise<void>): void {
-    this.queue = this.queue.then(task).catch((e) => console.error('[earmark] chunk task failed', e));
+    this.queue = this.queue.then(task).catch((e) => console.error('[toru] chunk task failed', e));
   }
 
   private async process(chunk: PendingChunk): Promise<void> {
@@ -263,7 +263,7 @@ async function rollover(title: string, url: string) {
 
 function track(work: Promise<void>): void {
   const tracked: Promise<void> = work
-    .catch((e) => console.error('[earmark] finishing a note failed', e))
+    .catch((e) => console.error('[toru] finishing a note failed', e))
     .finally(() => {
       finishing.delete(tracked);
       notifyIfIdle();

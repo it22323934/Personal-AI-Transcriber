@@ -18,7 +18,7 @@ chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({
       id: MENU_ID,
-      title: 'Earmark: start or stop recording this tab',
+      title: 'TORU: start or stop recording this tab',
       contexts: ['page', 'video', 'audio', 'link', 'selection', 'image'],
     });
   });
@@ -76,11 +76,11 @@ function friendlyCaptureError(e: unknown): Error {
   const message = errorMessage(e);
   if (/invoked|activeTab/i.test(message)) {
     return new Error(
-      'Chrome needs your OK for this tab first. Press Alt+Shift+R on the tab, or right-click the page → “Earmark: start or stop recording this tab”.',
+      'Chrome needs your OK for this tab first. Press Alt+Shift+R on the tab, or right-click the page → “TORU: start or stop recording this tab”.',
     );
   }
   if (/active stream/i.test(message)) {
-    return new Error('This tab is already being captured (by Earmark or another extension).');
+    return new Error('This tab is already being captured (by TORU or another extension).');
   }
   return e instanceof Error ? e : new Error(message);
 }
@@ -150,7 +150,7 @@ async function reconcile(opts: { sweep?: boolean } = {}): Promise<RecordingState
 async function updateBadge(rec: RecordingState | null): Promise<void> {
   await chrome.action.setBadgeText({ text: rec ? (rec.paused ? 'II' : 'REC') : '' });
   if (rec) await chrome.action.setBadgeBackgroundColor({ color: rec.paused ? '#6f6d63' : '#e5484d' });
-  await chrome.action.setTitle({ title: rec ? 'Earmark — recording' : 'Open Earmark' });
+  await chrome.action.setTitle({ title: rec ? 'TORU — recording' : 'Open TORU' });
 }
 
 /** Keyboard shortcut / context menu: toggle recording on that tab. */

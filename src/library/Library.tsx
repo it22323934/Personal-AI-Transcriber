@@ -112,7 +112,7 @@ export function Library() {
   return (
     <div className="lib">
       <aside className="lib-side">
-        <a href="#/" className="logo-link" aria-label="Earmark home">
+        <a href="#/" className="logo-link" aria-label="TORU home">
           <Logo size={24} />
         </a>
 
@@ -233,7 +233,7 @@ function HomeView(props: {
       <h1 className="hero">{firstRun ? 'Listen once. Keep the notes.' : 'Your lecture notes'}</h1>
       <p className="lede">
         {firstRun
-          ? 'Earmark records the audio of a browser tab, transcribes it as it plays, and turns each lecture into study notes, filed by project.'
+          ? 'TORU records the audio of a browser tab, transcribes it as it plays, and turns each lecture into study notes, filed by project.'
           : `${notes.length} ${notes.length === 1 ? 'note' : 'notes'} across ${visibleProjects.length} ${
               visibleProjects.length === 1 ? 'project' : 'projects'
             } · ${formatDuration(total)} recorded`}
@@ -258,7 +258,7 @@ function HomeView(props: {
             )}
           </Step>
           <Step n={3} title="Record a lecture">
-            Click the Earmark icon on the video’s tab and press Start recording, or press Alt+Shift+R.
+            Click the TORU icon on the video’s tab and press Start recording, or press Alt+Shift+R.
           </Step>
         </div>
       )}
@@ -365,7 +365,7 @@ function ProjectView(props: {
       {notes.length === 0 ? (
         <Empty
           title="No lectures here yet"
-          text="Open a video, click the Earmark icon, choose this project and press Start recording."
+          text="Open a video, click the TORU icon, choose this project and press Start recording."
         />
       ) : (
         <div className="note-list" style={{ marginTop: 18 }}>

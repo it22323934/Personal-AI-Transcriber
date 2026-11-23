@@ -24,7 +24,7 @@ export interface Reply {
 
 export async function callBackground<T = Reply>(msg: BackgroundRequest): Promise<T> {
   const reply = (await chrome.runtime.sendMessage({ target: 'background', ...msg })) as Reply | undefined;
-  if (!reply) throw new Error('Earmark’s background service didn’t respond. Try reloading the extension.');
+  if (!reply) throw new Error('TORU’s background service didn’t respond. Try reloading the extension.');
   if (!reply.ok) throw new Error(reply.error ?? 'Something went wrong.');
   return reply as T;
 }

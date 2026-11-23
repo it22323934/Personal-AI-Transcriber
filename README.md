@@ -1,13 +1,13 @@
-# Earmark — lecture notes from any browser tab
+# TORU — lecture notes from any browser tab
 
-A Chrome side-panel extension. Play a video in a tab, press **Start recording**, and Earmark:
+A Chrome side-panel extension. Play a video in a tab, press **Start recording**, and TORU:
 
 1. captures **only that tab's audio** (you keep hearing it),
 2. transcribes it live with OpenAI (new lines every 15–30 seconds),
 3. writes **study notes** when you stop: TL;DR, key concepts, how it works, things worth remembering and self-test questions,
 4. files everything under a **project** (e.g. "Entra ID"), with your own notes alongside.
 
-When the recorded tab moves to the next lecture (e.g. "Complete and Continue"), Earmark finishes the current note and starts a new one automatically.
+When the recorded tab moves to the next lecture (e.g. "Complete and Continue"), TORU finishes the current note and starts a new one automatically.
 
 Everything runs locally in your browser. Nothing is published, and the only server it talks to is `api.openai.com`, using your own key.
 
@@ -27,13 +27,13 @@ Then in Chrome:
 1. Open `chrome://extensions`.
 2. Turn on **Developer mode** (top right).
 3. Click **Load unpacked** and choose this project's **`dist`** folder.
-4. Pin Earmark from the puzzle-piece menu so its icon is always in the toolbar.
+4. Pin TORU from the puzzle-piece menu so its icon is always in the toolbar.
 
 You don't need the Chrome Web Store. An unpacked extension stays installed across restarts.
 
 ## First run
 
-1. Click the Earmark icon to open the side panel, then the **settings** icon (top right).
+1. Click the TORU icon to open the side panel, then the **settings** icon (top right).
 2. Paste your OpenAI API key and press **Test**, then **Save settings**.
 3. Click **+** next to "Save to" and create a project, e.g. **Entra ID**. Fill in
    - **What is it about?**: "AZ-104 Azure Administrator — identity section" (gives the AI context)
@@ -41,7 +41,7 @@ You don't need the Chrome Web Store. An unpacked extension stays installed acros
 
 ## Recording a lecture
 
-1. Go to the tab with the video and **click the Earmark toolbar icon on that tab**. Chrome only lets an extension capture a tab after you invoke it there.
+1. Go to the tab with the video and **click the TORU toolbar icon on that tab**. Chrome only lets an extension capture a tab after you invoke it there.
 2. Pick the project and press **Start recording**, then play the video.
 3. Watch the transcript fill in. Jot anything in **My notes**; the AI makes sure your points are covered.
 4. Press **Stop**. The study notes appear in **Summary** a few seconds later.
@@ -49,7 +49,7 @@ You don't need the Chrome Web Store. An unpacked extension stays installed acros
 Other ways to start or stop:
 
 - **Alt+Shift+R** on the tab. You can change this at `chrome://extensions/shortcuts`.
-- **Right-click the page → "Earmark: start or stop recording this tab"**.
+- **Right-click the page → "TORU: start or stop recording this tab"**.
 
 If you see *"Chrome needs your OK for this tab first"*, use one of these two. They always grant permission for the tab.
 
@@ -83,7 +83,7 @@ These are the prices I last saw; check OpenAI's pricing page. Silent stretches a
 
 | Symptom | Fix |
 |---|---|
-| "Chrome needs your OK for this tab first" | Press Alt+Shift+R on the tab, or right-click the page → Earmark |
+| "Chrome needs your OK for this tab first" | Press Alt+Shift+R on the tab, or right-click the page → TORU |
 | A note says "Needs attention" | Read the message. **Retry transcription** resends audio that failed; **Try again** rewrites the summary |
 | Bad or expired API key mid-recording | Recording continues and the audio is kept. Fix the key in Settings and it's sent automatically |
 | "Interrupted" | The browser closed or the extension reloaded mid-recording. Use Retry to finish what was captured |

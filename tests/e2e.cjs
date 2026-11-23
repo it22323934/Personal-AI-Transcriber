@@ -102,13 +102,13 @@ Microsoft Entra ID (formerly Azure Active Directory) is Azure’s cloud identity
     const lib = await openPage('library.html', 1440, 960);
     await shot(lib, '01-library-first-run');
     const inbox = await lib.evaluate(() => new Promise((res) => {
-      const r = indexedDB.open('earmark', 1);
+      const r = indexedDB.open('toru', 1);
       r.onsuccess = () => { const q = r.result.transaction('projects').objectStore('projects').get('inbox'); q.onsuccess = () => res(q.result); };
     }));
     check(inbox && inbox.name === 'Inbox', 'Inbox project created on first run');
 
     await lib.evaluate(async (seed) => {
-      const db = await new Promise((res, rej) => { const r = indexedDB.open('earmark', 1); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+      const db = await new Promise((res, rej) => { const r = indexedDB.open('toru', 1); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
       const put = (store, values) => new Promise((res, rej) => { const tx = db.transaction(store, 'readwrite'); for (const v of values) tx.objectStore(store).put(v); tx.oncomplete = res; tx.onerror = () => rej(tx.error); });
       await put('projects', seed.projects);
       await put('notes', seed.notes);
@@ -142,7 +142,7 @@ Microsoft Entra ID (formerly Azure Active Directory) is Azure’s cloud identity
     await lib.keyboard.press('Enter');
     await sleep(400);
     const renamed = await lib.evaluate(() => new Promise((res) => {
-      const r = indexedDB.open('earmark', 1);
+      const r = indexedDB.open('toru', 1);
       r.onsuccess = () => { const q = r.result.transaction('notes').objectStore('notes').get('n2'); q.onsuccess = () => res(q.result); };
     }));
     check(renamed.title === 'Exploring the Entra admin centre' && renamed.titleEdited === true, 'renaming a note persists and marks titleEdited');
@@ -206,11 +206,11 @@ Microsoft Entra ID (formerly Azure Active Directory) is Azure’s cloud identity
 
     const send = (msg) => sw.evaluate((m) => chrome.runtime.sendMessage(m), msg);
     const readDb = (store, key) => panel.evaluate((store, key) => new Promise((res) => {
-      const r = indexedDB.open('earmark', 1);
+      const r = indexedDB.open('toru', 1);
       r.onsuccess = () => { const q = r.result.transaction(store).objectStore(store).get(key); q.onsuccess = () => res(q.result); };
     }), store, key);
     const segmentsOf = (noteId) => panel.evaluate((noteId) => new Promise((res) => {
-      const r = indexedDB.open('earmark', 1);
+      const r = indexedDB.open('toru', 1);
       r.onsuccess = () => { const q = r.result.transaction('segments').objectStore('segments').index('noteId').getAll(noteId); q.onsuccess = () => res(q.result); };
     }), noteId);
 
@@ -294,7 +294,7 @@ Microsoft Entra ID (formerly Azure Active Directory) is Azure’s cloud identity
 
     // Stale state is reconciled when the recorder is gone.
     await panel.evaluate(() => new Promise((res) => {
-      const r = indexedDB.open('earmark', 1);
+      const r = indexedDB.open('toru', 1);
       r.onsuccess = () => { const tx = r.result.transaction(['meta', 'notes'], 'readwrite'); tx.objectStore('meta').put({ key: 'recording', value: { noteId: 'n4', projectId: 'p-net', tabId: 1, pageKey: 'x', paused: false, elapsedMs: 0, runningSince: Date.now() } }); tx.oncomplete = res; };
     }));
     await panel.evaluate(() => chrome.runtime.sendMessage({ target: 'background', type: 'GET_STATE' }));

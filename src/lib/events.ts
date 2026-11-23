@@ -18,7 +18,7 @@ let channel: BroadcastChannel | null = null;
 
 function getChannel(): BroadcastChannel {
   if (!channel) {
-    channel = new BroadcastChannel('earmark-events');
+    channel = new BroadcastChannel('toru-events');
     channel.onmessage = (e: MessageEvent<AppEvent>) => {
       for (const l of listeners) l(e.data);
     };

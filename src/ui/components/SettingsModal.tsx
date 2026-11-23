@@ -59,7 +59,7 @@ export function SettingsModal({ initial, onClose }: { initial: Settings; onClose
   async function exportData() {
     const backup = await store.exportBackup();
     const date = new Date().toISOString().slice(0, 10);
-    downloadFile(`earmark-backup-${date}.json`, JSON.stringify(backup, null, 2), 'application/json');
+    downloadFile(`toru-backup-${date}.json`, JSON.stringify(backup, null, 2), 'application/json');
   }
 
   async function importData(file: File) {

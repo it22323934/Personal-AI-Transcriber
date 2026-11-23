@@ -2,7 +2,7 @@
 // extension context (side panel, library tab, offscreen recorder, service
 // worker), which is why all app data lives here rather than chrome.storage.
 
-const DB_NAME = 'earmark';
+const DB_NAME = 'toru';
 const DB_VERSION = 1;
 
 export type StoreName = 'projects' | 'notes' | 'segments' | 'chunks' | 'meta';

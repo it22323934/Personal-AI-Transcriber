@@ -243,7 +243,7 @@ export async function deleteChunk(noteId: string, index: number): Promise<void> 
 // ------------------------------------------------------------------ backup
 
 export interface Backup {
-  app: 'earmark';
+  app: 'toru';
   version: 1;
   exportedAt: number;
   settings: Partial<Settings>;
@@ -255,7 +255,7 @@ export interface Backup {
 export async function exportBackup(): Promise<Backup> {
   const { apiKey: _omit, ...settings } = await getSettings();
   return {
-    app: 'earmark',
+    app: 'toru',
     version: 1,
     exportedAt: Date.now(),
     settings,
@@ -268,8 +268,8 @@ export async function exportBackup(): Promise<Backup> {
 /** Merges a backup into the current data. Records with the same id are replaced. */
 export async function importBackup(data: unknown): Promise<{ projects: number; notes: number }> {
   const b = data as Partial<Backup>;
-  if (!b || b.app !== 'earmark' || !Array.isArray(b.projects) || !Array.isArray(b.notes)) {
-    throw new Error('That file isn’t an Earmark backup.');
+  if (!b || b.app !== 'toru' || !Array.isArray(b.projects) || !Array.isArray(b.notes)) {
+    throw new Error('That file isn’t a TORU backup.');
   }
   // Recordings that were in flight when the backup was made can't resume.
   const notes = b.notes.map((n) =>

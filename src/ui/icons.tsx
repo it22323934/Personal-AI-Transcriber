@@ -117,7 +117,7 @@ export function Logo({ size = 22 }: { size?: number }) {
   return (
     <span className="logo">
       <LogoMark size={size} />
-      earmark
+      toru
     </span>
   );
 }
