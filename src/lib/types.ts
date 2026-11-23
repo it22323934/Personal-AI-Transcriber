@@ -64,6 +64,8 @@ export interface ChatMessage {
   model?: string;
   /** The answer was cut short with Stop. */
   stopped?: boolean;
+  /** The answer started pasting the transcript; that part was cut off. */
+  trimmed?: boolean;
   /** The request failed; content is empty and this explains why. */
   error?: string;
 }

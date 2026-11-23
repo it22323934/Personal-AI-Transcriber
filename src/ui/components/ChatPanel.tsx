@@ -212,6 +212,11 @@ function Message(props: { message: ChatMessage; onCopy: (t: string) => void; onR
       <Markdown text={m.content} />
       <div className="msg-tools">
         {m.stopped && <span className="faint">Stopped</span>}
+        {m.trimmed && (
+          <span className="faint" title="The answer started copying the lecture transcript, so TORU cut that part off.">
+            Stopped repeating the transcript
+          </span>
+        )}
         <button className="icon-btn" style={{ width: 26, height: 26 }} onClick={() => props.onCopy(m.content)} aria-label="Copy answer" title="Copy">
           <IconCopy size={13} />
         </button>
