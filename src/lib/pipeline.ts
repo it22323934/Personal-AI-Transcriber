@@ -90,6 +90,22 @@ export async function retryPendingChunks(noteId: string): Promise<void> {
 }
 
 /**
+ * Gives up on audio that couldn't be transcribed (for one note, or all notes
+ * except the live recording). Whatever transcript already exists is kept.
+ */
+export async function discardAudio(noteId?: string): Promise<number> {
+  const live = await store.getRecording();
+  if (noteId && live?.noteId === noteId) throw new Error('Stop the recording first.');
+  const affected = await store.discardChunks(noteId ? { noteId } : { keepNoteId: live?.noteId });
+  for (const id of affected) {
+    await store.updateNote(id, (n) =>
+      n.status === 'error' || n.status === 'interrupted' ? { status: 'done', error: undefined } : undefined,
+    );
+  }
+  return affected.length;
+}
+
+/**
  * Called once a note's audio is fully captured and its queue has drained.
  * Writes the summary (if enabled) and settles the note's status.
  */

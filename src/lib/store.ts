@@ -209,6 +209,11 @@ export async function getSegments(noteId: string): Promise<Segment[]> {
   return segs.sort((a, b) => a.index - b.index);
 }
 
+/** Segments with index ≥ fromIndex, read straight off the [noteId, index] key range. */
+export async function getSegmentsFrom(noteId: string, fromIndex: number): Promise<Segment[]> {
+  return db.getRange<Segment>('segments', IDBKeyRange.bound([noteId, fromIndex], [noteId, Infinity]));
+}
+
 export async function getAllSegments(): Promise<Segment[]> {
   return db.getAll<Segment>('segments');
 }
@@ -241,6 +246,44 @@ export async function updateChunk(noteId: string, index: number, patch: Partial<
 export async function deleteChunk(noteId: string, index: number): Promise<void> {
   await db.del('chunks', [noteId, index]);
   emit({ type: 'chunks', noteId });
+}
+
+/** Audio still waiting to be transcribed: the only data that can grow large (~1 MB per 30 s). */
+export async function audioBacklog(): Promise<{ chunks: number; bytes: number; noteIds: string[] }> {
+  const chunks = await db.getAll<PendingChunk>('chunks'); // Blobs are handles; their bytes aren't read
+  return {
+    chunks: chunks.length,
+    bytes: chunks.reduce((sum, c) => sum + c.audio.size, 0),
+    noteIds: [...new Set(chunks.map((c) => c.noteId))],
+  };
+}
+
+/** Deletes waiting audio for one note, or for every note except `keepNoteId`. Returns affected notes. */
+export async function discardChunks(opts: { noteId?: string; keepNoteId?: string } = {}): Promise<string[]> {
+  if (opts.noteId) {
+    await db.deleteByIndex('chunks', 'noteId', opts.noteId);
+    emit({ type: 'chunks', noteId: opts.noteId });
+    return [opts.noteId];
+  }
+  const keys = (await db.getAllKeys('chunks')) as [string, number][];
+  const doomed = keys.filter(([noteId]) => noteId !== opts.keepNoteId);
+  await db.deleteKeys('chunks', doomed);
+  const noteIds = [...new Set(doomed.map(([noteId]) => noteId))];
+  for (const noteId of noteIds) emit({ type: 'chunks', noteId });
+  return noteIds;
+}
+
+/** Removes audio and transcript lines whose note no longer exists. Returns how many were removed. */
+export async function sweepOrphans(): Promise<number> {
+  const noteIds = new Set((await db.getAllKeys('notes')) as string[]);
+  let removed = 0;
+  for (const name of ['chunks', 'segments'] as const) {
+    const keys = (await db.getAllKeys(name)) as [string, number][];
+    const orphans = keys.filter(([noteId]) => !noteIds.has(noteId));
+    await db.deleteKeys(name, orphans);
+    removed += orphans.length;
+  }
+  return removed;
 }
 
 // ------------------------------------------------------------------ backup

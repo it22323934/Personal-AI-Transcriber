@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { downloadFile, projectToMarkdown, safeFilename } from '../lib/export';
 import { errorMessage, formatClock, formatDate, formatDuration } from '../lib/format';
 import { callOffscreen } from '../lib/messages';
@@ -8,10 +8,11 @@ import { NoteRow, ProjectDot } from '../ui/components/bits';
 import { Empty, NoteView, Skeleton } from '../ui/components/NoteView';
 import { ProjectModal } from '../ui/components/ProjectModal';
 import { SettingsModal } from '../ui/components/SettingsModal';
-import { elapsedMs, useLive, useNote, useNotes, useNow, useProjects, useRecording, useSettings } from '../ui/hooks';
+import { subscribe } from '../lib/events';
+import { elapsedMs, useDebouncedValue, useNote, useNotes, useNow, useProjects, useRecording, useSettings } from '../ui/hooks';
 import { IconDownload, IconHome, IconPencil, IconPlus, IconSearch, IconSettings, IconStop, Logo } from '../ui/icons';
-import { summaryPreview } from '../ui/Markdown';
 import { toast, Toaster } from '../ui/toast';
+import { searchNotes, searchTerms, type SearchResult } from './search';
 
 type Route = { name: 'home' } | { name: 'project'; id: string } | { name: 'note'; id: string };
 
@@ -56,6 +57,8 @@ export function Library() {
   const settings = useSettings();
   const [modal, setModal] = useState<ModalState>(null);
   const [query, setQuery] = useState('');
+  // Search once typing pauses, not on every keystroke.
+  const searchQuery = useDebouncedValue(query.trim(), 250);
 
   useEffect(() => {
     store.ensureInbox().catch(console.error);
@@ -82,7 +85,9 @@ export function Library() {
 
   let content: ReactNode;
   if (query.trim()) {
-    content = <SearchView query={query.trim()} projects={projects ?? []} liveNoteId={recording?.noteId} />;
+    content = (
+      <SearchView query={searchQuery} typed={query.trim()} projects={projects ?? []} liveNoteId={recording?.noteId} />
+    );
   } else if (route.name === 'project') {
     content = (
       <ProjectView
@@ -409,39 +414,6 @@ function NoteRoute({
 
 // ------------------------------------------------------------------ search
 
-interface SearchResult {
-  note: Note;
-  snippet: string;
-}
-
-async function searchNotes(query: string): Promise<SearchResult[]> {
-  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
-  const [notes, segments] = await Promise.all([store.listNotes(), store.getAllSegments()]);
-  const transcripts = new Map<string, string[]>();
-  for (const s of segments.sort((a, b) => a.index - b.index)) {
-    const list = transcripts.get(s.noteId) ?? [];
-    list.push(s.text);
-    transcripts.set(s.noteId, list);
-  }
-  const results: (SearchResult & { titleHit: boolean })[] = [];
-  for (const note of notes) {
-    const body = [note.summary ?? '', note.myNotes, (transcripts.get(note.id) ?? []).join(' ')].join('\n');
-    const haystack = `${note.title}\n${body}`.toLowerCase();
-    if (!terms.every((t) => haystack.includes(t))) continue;
-    const plain = body
-      .replace(/^\s*([-*+•]|\d+[.)])\s+/gm, '') // list markers
-      .replace(/[#*_`>]/g, '')
-      .replace(/\s+/g, ' ');
-    const lower = plain.toLowerCase();
-    const at = Math.min(...terms.map((t) => lower.indexOf(t)).filter((i) => i >= 0), Infinity);
-    const snippet = Number.isFinite(at)
-      ? `${at > 70 ? '…' : ''}${plain.slice(Math.max(0, at - 70), at + 170).trim()}…`
-      : summaryPreview(note.summary);
-    results.push({ note, snippet, titleHit: terms.some((t) => note.title.toLowerCase().includes(t)) });
-  }
-  return results.sort((a, b) => Number(b.titleHit) - Number(a.titleHit) || b.note.createdAt - a.note.createdAt);
-}
-
 function Highlight({ text, terms }: { text: string; terms: string[] }) {
   if (!terms.length) return <>{text}</>;
   const re = new RegExp(`(${terms.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi');
@@ -452,18 +424,49 @@ function Highlight({ text, terms }: { text: string; terms: string[] }) {
   );
 }
 
-function SearchView({ query, projects, liveNoteId }: { query: string; projects: Project[]; liveNoteId?: string }) {
-  const results = useLive(
-    () => searchNotes(query),
-    [query],
-    (e) => e.type === 'notes' || e.type === 'segments',
-  );
-  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+/** Runs the search when the (debounced) query changes, keeping the previous results on screen meanwhile. */
+function useSearch(query: string): SearchResult[] | undefined {
+  const [results, setResults] = useState<SearchResult[]>();
+  const latest = useRef(query);
+  latest.current = query;
+
+  useEffect(() => {
+    if (!query) return;
+    let alive = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const run = () =>
+      searchNotes(query).then(
+        (r) => alive && latest.current === query && setResults(r),
+        (e) => console.error('[toru] search failed', e),
+      );
+    run();
+    // Refresh when notes change (e.g. a live lecture gets new lines), at most every 400 ms.
+    const unsubscribe = subscribe((e) => {
+      if (e.type !== 'notes' && e.type !== 'segments') return;
+      timer ??= setTimeout(() => {
+        timer = undefined;
+        run();
+      }, 400);
+    });
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+      unsubscribe();
+    };
+  }, [query]);
+
+  return query ? results : undefined;
+}
+
+function SearchView(props: { query: string; typed: string; projects: Project[]; liveNoteId?: string }) {
+  const { query, projects, liveNoteId } = props;
+  const results = useSearch(query);
+  const terms = searchTerms(query);
   return (
     <div className="page">
       <div className="eyebrow">Search</div>
       <h1 className="hero" style={{ fontSize: 'clamp(34px, 4vw, 48px)' }}>
-        “{query}”
+        “{props.typed}”
       </h1>
       {!results ? (
         <Skeleton lines={4} />

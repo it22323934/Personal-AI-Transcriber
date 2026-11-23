@@ -185,6 +185,10 @@ async function reconcile(opts: { sweep?: boolean } = {}): Promise<RecordingState
         : undefined,
     );
   }
+  if (!status?.busy) {
+    // Nothing is recording or processing: drop audio/lines whose note is gone.
+    await store.sweepOrphans().catch(console.error);
+  }
   if (opts.sweep && !status?.busy) {
     for (const note of await store.listNotes()) {
       if (note.status === 'recording' || note.status === 'processing' || note.status === 'summarizing') {

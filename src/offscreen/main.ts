@@ -2,7 +2,7 @@
 // audible, slices it into chunks at natural pauses, and feeds those chunks
 // through the transcription queue. It outlives the side panel, so recording
 // keeps going when the panel is closed.
-import { concat, downsample, encodeWav, normalize, rms } from '../lib/audio';
+import { encodeWav, normalizeGain, peak } from '../lib/audio';
 import { emit, subscribe } from '../lib/events';
 import { cleanTitle, errorMessage, pageKey } from '../lib/format';
 import { MINI_PORT, type MiniCommand, type MiniMessage, type MiniSnapshot, type OffscreenRequest } from '../lib/messages';
@@ -10,15 +10,18 @@ import { finalizeNote, transcribeWithRetry } from '../lib/pipeline';
 import * as store from '../lib/store';
 import type { PendingChunk, RecordingState } from '../lib/types';
 
-const TARGET_RATE = 16_000;
+/** The worklet delivers 16 kHz mono 16-bit PCM in 50 ms blocks. */
+const SAMPLE_RATE = 16_000;
 const MIN_CHUNK_SEC = 15; // start looking for a pause after this long
 const MAX_CHUNK_SEC = 30; // cut regardless after this long
 const MIN_CHUNK_MS = 500; // shorter tails are dropped
 const SPEECH_LEVEL = 0.004; // block RMS above this counts as sound
+/** Pages showing a level meter ping this often; levels stop flowing without a recent ping. */
+const LEVEL_WATCH_TIMEOUT_MS = 5000;
 
 /** Collects audio for one note and transcribes it chunk by chunk, in order. */
 class NoteSession {
-  private blocks: Float32Array[] = [];
+  private blocks: Int16Array[] = [];
   private levels: number[] = [];
   private levelSum = 0;
   private length = 0;
@@ -33,19 +36,18 @@ class NoteSession {
   constructor(
     readonly noteId: string,
     readonly pageKey: string,
-    private readonly sampleRate: number,
   ) {}
 
-  push(block: Float32Array, level: number): void {
+  push(block: Int16Array, level: number): void {
     this.blocks.push(block);
     this.levels.push(level);
     this.levelSum += level;
     this.length += block.length;
-    const seconds = this.length / this.sampleRate;
+    const seconds = this.length / SAMPLE_RATE;
     if (seconds >= MAX_CHUNK_SEC || (seconds >= MIN_CHUNK_SEC && this.atPause())) this.cut();
   }
 
-  /** True when the last ~85 ms are clearly quieter than this chunk's average. */
+  /** True when the last ~100 ms are clearly quieter than this chunk's average. */
   private atPause(): boolean {
     const n = this.levels.length;
     if (n < 4) return false;
@@ -56,7 +58,8 @@ class NoteSession {
   /** Closes the current chunk and queues it for transcription. */
   cut(): void {
     if (!this.length) return;
-    const samples = concat(this.blocks, this.length);
+    const blocks = this.blocks;
+    const length = this.length;
     const levels = this.levels;
     this.blocks = [];
     this.levels = [];
@@ -64,7 +67,7 @@ class NoteSession {
     this.length = 0;
 
     const startMs = this.cursorMs;
-    this.cursorMs += (samples.length / this.sampleRate) * 1000;
+    this.cursorMs += (length / SAMPLE_RATE) * 1000;
     const endMs = this.cursorMs;
     const index = this.nextIndex++;
     store.updateNote(this.noteId, { durationMs: Math.round(endMs) }).catch(console.error);
@@ -78,7 +81,7 @@ class NoteSession {
       index,
       startMs: Math.round(startMs),
       endMs: Math.round(endMs),
-      audio: encodeWav(normalize(downsample(samples, this.sampleRate, TARGET_RATE)), TARGET_RATE),
+      audio: encodeWav(blocks, length, SAMPLE_RATE, normalizeGain(peak(blocks))),
       attempts: 0,
     };
     const saved = store.addChunk(chunk); // persisted first, so nothing is lost if transcription fails
@@ -114,6 +117,7 @@ class NoteSession {
         if (this.blocked) break;
         await this.process(chunk);
       }
+      resyncMini(); // earlier lines were filled in out of order
     });
   }
 
@@ -137,6 +141,7 @@ let session: NoteSession | null = null;
 let state: RecordingState | null = null;
 const finishing = new Set<Promise<void>>();
 let levelTick = 0;
+let levelWatchedAt = 0;
 
 async function publishState(next: RecordingState | null): Promise<void> {
   state = next;
@@ -144,10 +149,14 @@ async function publishState(next: RecordingState | null): Promise<void> {
   chrome.runtime.sendMessage({ target: 'background', type: 'RECORDING_CHANGED' }).catch(() => {});
 }
 
-function onBlock(block: Float32Array): void {
-  const level = rms(block);
-  if (++levelTick % 2 === 0) emit({ type: 'level', level: state?.paused ? 0 : level });
-  if (session && state && !state.paused) session.push(block, level);
+function onBlock({ pcm, level }: { pcm: Int16Array; level: number }): void {
+  // Level meters update ~10x a second, and only while something shows one.
+  if (++levelTick % 2 === 0) {
+    const shown = state?.paused ? 0 : level;
+    for (const port of miniPorts.keys()) post(port, { type: 'level', level: shown });
+    if (Date.now() - levelWatchedAt < LEVEL_WATCH_TIMEOUT_MS) emit({ type: 'level', level: shown });
+  }
+  if (session && state && !state.paused) session.push(pcm, level);
 }
 
 async function start(msg: Extract<OffscreenRequest, { type: 'START' }>) {
@@ -171,7 +180,7 @@ async function start(msg: Extract<OffscreenRequest, { type: 'START' }>) {
     mute.gain.value = 0;
     source.connect(worklet);
     worklet.connect(mute).connect(ctx.destination); // keeps the worklet pulled by the graph
-    worklet.port.onmessage = (e: MessageEvent<Float32Array>) => onBlock(e.data);
+    worklet.port.onmessage = (e: MessageEvent<{ pcm: Int16Array; level: number }>) => onBlock(e.data);
     await ctx.resume();
     capture = { stream, ctx, worklet };
   } catch (e) {
@@ -193,7 +202,7 @@ async function start(msg: Extract<OffscreenRequest, { type: 'START' }>) {
     autoSummary: (await store.getSettings()).autoSummarize,
   });
   const key = pageKey(msg.url);
-  session = new NoteSession(note.id, key, capture.ctx.sampleRate);
+  session = new NoteSession(note.id, key);
   focusNoteId = note.id;
   await publishState({
     noteId: note.id,
@@ -212,6 +221,7 @@ async function stop() {
   const { stream, ctx, worklet } = capture;
   capture = null;
   worklet.port.onmessage = null;
+  worklet.disconnect();
   stream.getTracks().forEach((t) => t.stop());
   await ctx.close().catch(() => {});
   const ended = session;
@@ -258,7 +268,7 @@ async function rollover(title: string, url: string) {
     status: 'recording',
     autoSummary: prevNote?.autoSummary ?? (await store.getSettings()).autoSummarize,
   });
-  session = new NoteSession(note.id, key, capture.ctx.sampleRate);
+  session = new NoteSession(note.id, key);
   focusNoteId = note.id;
   await publishState({
     ...state,
@@ -323,13 +333,22 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 });
 
 // ------------------------------------------------------------ mini player
-// The on-page mini player connects over a port and gets pushed snapshots of
-// the live (or just-finished) note plus input levels.
+// The on-page mini player connects over a port. Each push carries the note's
+// status plus only the transcript lines that port hasn't received yet, so a
+// long lecture isn't re-sent (and re-drawn) every time a line arrives.
 
-const miniPorts = new Set<chrome.runtime.Port>();
+interface MiniPortState {
+  noteId: string | null;
+  /** Lowest segment index this port hasn't received. */
+  next: number;
+  /** Send the whole transcript on the next push. */
+  resync: boolean;
+}
+
+const miniPorts = new Map<chrome.runtime.Port, MiniPortState>();
 /** The note the mini player follows: the live one, or the one that just ended. */
 let focusNoteId: string | null = null;
-let snapshotTimer: ReturnType<typeof setTimeout> | null = null;
+let pushTimer: ReturnType<typeof setTimeout> | null = null;
 
 function post(port: chrome.runtime.Port, msg: MiniMessage): void {
   try {
@@ -339,10 +358,31 @@ function post(port: chrome.runtime.Port, msg: MiniMessage): void {
   }
 }
 
-async function snapshot(): Promise<MiniSnapshot> {
+function resyncMini(): void {
+  for (const st of miniPorts.values()) st.resync = true;
+  pushToMini();
+}
+
+async function pushTo(port: chrome.runtime.Port, base: Omit<MiniSnapshot, 'segments' | 'reset'>): Promise<void> {
+  const st = miniPorts.get(port);
+  if (!st) return;
+  const noteId = base.note?.id ?? null;
+  const reset = st.resync || st.noteId !== noteId;
+  const from = reset ? 0 : st.next;
+  const segments = noteId ? await store.getSegmentsFrom(noteId, from) : [];
+  st.noteId = noteId;
+  st.resync = false;
+  st.next = segments.length ? segments[segments.length - 1].index + 1 : from;
+  post(port, {
+    ...base,
+    reset,
+    segments: segments.map((s) => ({ index: s.index, startMs: s.startMs, text: s.text })),
+  });
+}
+
+async function noteStatus(): Promise<Omit<MiniSnapshot, 'segments' | 'reset'>> {
   const note = focusNoteId ? await store.getNote(focusNoteId) : undefined;
-  const [segments, pending, project, settings] = await Promise.all([
-    note ? store.getSegments(note.id) : Promise.resolve([]),
+  const [pending, project, settings] = await Promise.all([
     note ? store.countChunks(note.id) : Promise.resolve(0),
     note ? store.getProject(note.projectId) : Promise.resolve(undefined),
     store.getSettings(),
@@ -360,18 +400,21 @@ async function snapshot(): Promise<MiniSnapshot> {
           hasSummary: !!note.summary,
         }
       : null,
-    segments: segments.map((s) => ({ index: s.index, startMs: s.startMs, text: s.text })),
     pending,
   };
 }
 
-/** Coalesces bursts of change events into one snapshot push. */
-function pushSnapshot(): void {
-  if (!miniPorts.size || snapshotTimer) return;
-  snapshotTimer = setTimeout(async () => {
-    snapshotTimer = null;
-    const snap = await snapshot().catch(() => null);
-    if (snap) for (const port of miniPorts) post(port, snap);
+/** Coalesces bursts of change events into one push per port. */
+function pushToMini(): void {
+  if (!miniPorts.size || pushTimer) return;
+  pushTimer = setTimeout(async () => {
+    pushTimer = null;
+    try {
+      const base = await noteStatus();
+      await Promise.all([...miniPorts.keys()].map((port) => pushTo(port, base)));
+    } catch (e) {
+      console.error('[toru] mini player update failed', e);
+    }
   }, 120);
 }
 
@@ -394,7 +437,7 @@ async function handleMini(cmd: MiniCommand): Promise<void> {
 
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== MINI_PORT) return;
-  miniPorts.add(port);
+  miniPorts.set(port, { noteId: null, next: 0, resync: true });
   port.onDisconnect.addListener(() => {
     void chrome.runtime.lastError; // e.g. the page went into the back/forward cache
     miniPorts.delete(port);
@@ -402,17 +445,16 @@ chrome.runtime.onConnect.addListener((port) => {
   port.onMessage.addListener((cmd: MiniCommand) => {
     handleMini(cmd).catch((e) => console.error('[toru] mini player command failed', e));
   });
-  snapshot().then((snap) => post(port, snap), console.error);
+  pushToMini();
 });
 
 subscribe((e) => {
   if (e.type === 'settings') session?.retryHeldBack();
+  if (e.type === 'level-watch') levelWatchedAt = Date.now();
   if (!miniPorts.size) return;
-  if (e.type === 'level') {
-    for (const port of miniPorts) post(port, e);
-  } else if (e.type === 'recording' || e.type === 'settings' || e.type === 'projects') {
-    pushSnapshot();
+  if (e.type === 'recording' || e.type === 'settings' || e.type === 'projects') {
+    pushToMini();
   } else if ((e.type === 'notes' || e.type === 'segments' || e.type === 'chunks') && (!e.noteId || e.noteId === focusNoteId)) {
-    pushSnapshot();
+    pushToMini();
   }
 });

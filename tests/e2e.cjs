@@ -136,6 +136,9 @@ Microsoft Entra ID (formerly Azure Active Directory) is Azure’s cloud identity
     await lib.evaluate(() => [...document.querySelectorAll('[role=tab]')].find((b) => b.textContent.startsWith('My notes')).click());
     await shot(lib, '06-library-note-mynotes');
     await lib.type('input[type=search]', 'conditional access');
+    await sleep(700); // search runs once typing pauses
+    const found = await lib.evaluate(() => [...document.querySelectorAll('.note-row .note-row-title')].map((e) => e.textContent));
+    check(found.length === 1 && found[0] === 'Entra ID Overview', `search finds the lecture (${JSON.stringify(found)})`);
     await shot(lib, '07-library-search');
     await lib.evaluate(() => [...document.querySelectorAll('.nav-item')].find((b) => b.textContent.includes('Settings')).click());
     await shot(lib, '08-settings');
@@ -313,6 +316,46 @@ Microsoft Entra ID (formerly Azure Active Directory) is Azure’s cloud identity
     await panel.evaluate(() => chrome.runtime.sendMessage({ target: 'background', type: 'GET_STATE' }));
     check((await readDb('meta', 'recording')) === undefined, 'stale recording state cleared by GET_STATE');
 
+    // Leftover audio/lines of deleted notes are swept when the recorder is idle.
+    await panel.evaluate(() => new Promise((res) => {
+      const r = indexedDB.open('toru', 1);
+      r.onsuccess = () => {
+        const tx = r.result.transaction(['chunks', 'segments'], 'readwrite');
+        tx.objectStore('chunks').put({ noteId: 'ghost', index: 0, startMs: 0, endMs: 1000, audio: new Blob([new Uint8Array(2048)]), attempts: 1 });
+        tx.objectStore('segments').put({ noteId: 'ghost', index: 0, startMs: 0, endMs: 1000, text: 'orphan' });
+        tx.oncomplete = res;
+      };
+    }));
+    await panel.evaluate(() => chrome.runtime.sendMessage({ target: 'background', type: 'GET_STATE' }));
+    check(!(await readDb('chunks', ['ghost', 0])) && !(await readDb('segments', ['ghost', 0])), 'orphaned audio and lines are swept');
+
+    // Audio that couldn't be transcribed can be discarded from the note.
+    await panel.evaluate(() => new Promise((res) => {
+      const r = indexedDB.open('toru', 1);
+      r.onsuccess = () => {
+        const tx = r.result.transaction('chunks', 'readwrite');
+        tx.objectStore('chunks').put({ noteId: 'n3', index: 0, startMs: 0, endMs: 20000, audio: new Blob([new Uint8Array(640000)]), attempts: 3, lastError: 'quota' });
+        tx.oncomplete = res;
+      };
+    }));
+    await lib.goto(`chrome-extension://${extId}/library.html#/note/n3`, { waitUntil: 'networkidle0' });
+    await sleep(500);
+    const discardBtn = await lib.evaluateHandle(() => [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Discard audio'));
+    check(!!(await discardBtn.evaluate((b) => !!b)), 'note with failed audio offers “Discard audio”');
+    await discardBtn.evaluate((b) => b.click());
+    await sleep(300);
+    await lib.evaluate(() => [...document.querySelectorAll('.modal button')].find((b) => b.textContent.trim() === 'Discard audio').click());
+    await sleep(600);
+    const n3 = await readDb('notes', 'n3');
+    check(!(await readDb('chunks', ['n3', 0])) && n3.status === 'done' && !n3.error, 'discarding removes the audio and clears the error');
+
+    // Settings shows storage use.
+    await lib.evaluate(() => [...document.querySelectorAll('.nav-item')].find((b) => b.textContent.includes('Settings')).click());
+    await sleep(600);
+    const usageText = await lib.evaluate(() => [...document.querySelectorAll('.modal .callout')].map((c) => c.textContent).find((t) => t.includes('TORU is using')) || '');
+    check(/TORU is using [0-9.]+ (B|KB|MB)/.test(usageText), `settings shows storage use (“${usageText.slice(0, 60)}…”)`);
+    await lib.keyboard.press('Escape');
+
     // Starting without tab permission gives a friendly error.
     const tab = await browser.newPage();
     const htmlPath = path.join(OUT, 'video.html');
@@ -414,6 +457,9 @@ Microsoft Entra ID (formerly Azure Active Directory) is Azure’s cloud identity
     const result = await inMini('return root.querySelector(\'[data-el="done-title"]\').textContent + " · " + root.querySelector(\'[data-el="done-sub"]\').textContent;');
     check(result === 'Saved to Entra ID · Study notes ready', `mini player shows how the lecture was saved (“${result}”)`);
     await shot(lecture, '17-mini-done');
+    const miniRows = await inMini('return [...root.querySelectorAll(".row")].map((r) => r.dataset.index).join(",");');
+    const dbRows = (await segmentsOf(g2)).map((s) => s.index).sort((a, b) => a - b).join(',');
+    check(miniRows === dbRows, `mini player shows every line exactly once, in order (${miniRows} vs ${dbRows})`);
     await miniClick('open');
     await sleep(1500);
     const libUrls = await sw.evaluate(async () => (await chrome.tabs.query({})).map((t) => t.url).filter((u) => u && u.includes('library.html')));

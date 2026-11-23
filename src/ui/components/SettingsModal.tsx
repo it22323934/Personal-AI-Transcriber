@@ -1,14 +1,15 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { downloadFile } from '../../lib/export';
-import { errorMessage } from '../../lib/format';
+import { errorMessage, formatBytes } from '../../lib/format';
 import { listModels } from '../../lib/openai';
+import { discardAudio } from '../../lib/pipeline';
 import { DEFAULT_SUMMARY_PROMPT } from '../../lib/prompts';
 import * as store from '../../lib/store';
 import type { Settings } from '../../lib/types';
 import { IconCheck, IconDownload, IconEye, IconEyeOff, IconUpload } from '../icons';
 import { toast } from '../toast';
 import { LANGUAGES } from './languages';
-import { Modal } from './Modal';
+import { Modal, useConfirm } from './Modal';
 
 const TRANSCRIBE_MODELS = ['gpt-4o-mini-transcribe', 'gpt-4o-transcribe', 'whisper-1'];
 const SUMMARY_MODELS = ['gpt-5-mini', 'gpt-5', 'gpt-5-nano', 'gpt-4.1-mini', 'gpt-4.1', 'gpt-4o-mini'];
@@ -19,6 +20,8 @@ export function SettingsModal({ initial, onClose }: { initial: Settings; onClose
   const [test, setTest] = useState<{ state: 'idle' | 'testing' | 'ok' | 'fail'; message?: string }>({ state: 'idle' });
   const [saving, setSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const usage = useStorageUsage();
+  const { confirm, element: confirmEl } = useConfirm();
 
   const set = <K extends keyof Settings>(key: K, value: Settings[K]) => setDraft((d) => ({ ...d, [key]: value }));
 
@@ -71,7 +74,26 @@ export function SettingsModal({ initial, onClose }: { initial: Settings; onClose
     }
   }
 
+  async function discardWaiting() {
+    if (!usage) return;
+    const ok = await confirm({
+      title: 'Discard all waiting audio?',
+      message: `${formatBytes(usage.backlog.bytes)} of audio from ${usage.backlog.noteIds.length} lecture(s) couldn’t be transcribed yet. Their existing transcripts are kept; the audio can’t be retried afterwards. A recording in progress isn’t touched.`,
+      confirmLabel: 'Discard audio',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      const n = await discardAudio();
+      toast(`Discarded waiting audio from ${n} lecture${n === 1 ? '' : 's'}`);
+      usage.refresh();
+    } catch (e) {
+      toast(errorMessage(e), 'error');
+    }
+  }
+
   return (
+    <>
     <Modal
       title="Settings"
       subtitle="Everything is stored locally in this Chrome profile."
@@ -271,6 +293,25 @@ export function SettingsModal({ initial, onClose }: { initial: Settings; onClose
           Notes live inside this extension’s storage. <strong>Removing the extension deletes them</strong>, so export a
           backup first. (Reloading or updating it is safe.)
         </div>
+        {usage && (
+          <div className="callout">
+            <div className="callout-body">
+              <span>
+                TORU is using <strong>{formatBytes(usage.bytes)}</strong> in this browser.{' '}
+                {usage.backlog.chunks
+                  ? `${formatBytes(usage.backlog.bytes)} of that is audio from ${usage.backlog.noteIds.length} lecture${usage.backlog.noteIds.length === 1 ? '' : 's'} still waiting to be transcribed.`
+                  : 'No audio is waiting to be transcribed. Audio is deleted as soon as it has been transcribed.'}
+              </span>
+              {usage.backlog.chunks > 0 && (
+                <div className="callout-actions">
+                  <button className="btn btn-sm btn-danger" onClick={discardWaiting}>
+                    Discard waiting audio
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
         <div className="row">
           <button className="btn btn-sm" onClick={exportData}>
             <IconDownload size={14} /> Export backup
@@ -292,5 +333,23 @@ export function SettingsModal({ initial, onClose }: { initial: Settings; onClose
         </div>
       </section>
     </Modal>
+    {confirmEl}
+    </>
   );
+}
+
+function useStorageUsage() {
+  const [usage, setUsage] = useState<{ bytes: number; backlog: Awaited<ReturnType<typeof store.audioBacklog>> }>();
+  const [version, setVersion] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    Promise.all([navigator.storage.estimate(), store.audioBacklog()]).then(
+      ([estimate, backlog]) => alive && setUsage({ bytes: estimate.usage ?? 0, backlog }),
+      console.error,
+    );
+    return () => {
+      alive = false;
+    };
+  }, [version]);
+  return usage && { ...usage, refresh: () => setVersion((v) => v + 1) };
 }

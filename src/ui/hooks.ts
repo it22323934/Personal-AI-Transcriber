@@ -1,12 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { subscribe, type AppEvent } from '../lib/events';
+import { emit, subscribe, type AppEvent } from '../lib/events';
 import { callBackground } from '../lib/messages';
 import * as store from '../lib/store';
 import type { Note, Project, RecordingState, Settings } from '../lib/types';
 
+/** Matching events within this window trigger a single reload. */
+const RELOAD_COALESCE_MS = 50;
+
 /**
  * Loads data and reloads it whenever a matching change event arrives from any
- * extension context. Returns undefined until the first load completes.
+ * extension context. A burst of events (one audio chunk emits notes + chunks +
+ * segments) causes one reload, not several. Returns undefined until the first
+ * load completes.
  */
 export function useLive<T>(load: () => Promise<T>, deps: unknown[], matches: (e: AppEvent) => boolean): T | undefined {
   const [value, setValue] = useState<T>();
@@ -27,13 +32,21 @@ export function useLive<T>(load: () => Promise<T>, deps: unknown[], matches: (e:
         (e) => console.error('[toru] load failed', e),
       );
     };
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const schedule = () => {
+      timer ??= setTimeout(() => {
+        timer = undefined;
+        run();
+      }, RELOAD_COALESCE_MS);
+    };
     setValue(undefined);
     run();
     const unsubscribe = subscribe((e) => {
-      if (e.type !== 'level' && matchRef.current(e)) run();
+      if (e.type !== 'level' && e.type !== 'level-watch' && matchRef.current(e)) schedule();
     });
     return () => {
       alive = false;
+      clearTimeout(timer);
       unsubscribe();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -89,17 +102,34 @@ export function useNow(active: boolean, interval = 500): number {
   return now;
 }
 
-/** Recent input levels from the recorder, newest last. */
+/**
+ * Recent input levels from the recorder, newest last. While mounted it tells
+ * the recorder someone is watching; with no meter on screen no levels are sent.
+ */
 export function useLevels(count: number): number[] {
   const [levels, setLevels] = useState<number[]>(() => Array(count).fill(0));
-  useEffect(
-    () =>
-      subscribe((e) => {
-        if (e.type === 'level') setLevels((prev) => [...prev.slice(1 - count), e.level]);
-      }),
-    [count],
-  );
+  useEffect(() => {
+    const unsubscribe = subscribe((e) => {
+      if (e.type === 'level') setLevels((prev) => [...prev.slice(1 - count), e.level]);
+    });
+    emit({ type: 'level-watch' });
+    const ping = setInterval(() => emit({ type: 'level-watch' }), 2000);
+    return () => {
+      clearInterval(ping);
+      unsubscribe();
+    };
+  }, [count]);
   return levels;
+}
+
+/** The value, but only after it has stopped changing for `delay` ms. */
+export function useDebouncedValue<T>(value: T, delay: number): T {
+  const [settled, setSettled] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setSettled(value), delay);
+    return () => clearTimeout(t);
+  }, [value, delay]);
+  return settled;
 }
 
 /** Debounced saver that also flushes on unmount. */

@@ -183,7 +183,13 @@ import type { MiniCommand, MiniMessage, MiniSnapshot } from '../lib/messages';
   let snap: MiniSnapshot | null = null;
   let port: chrome.runtime.Port | null = null;
   let expanded = false;
-  let renderedKey = '';
+  /** Transcript rows by segment index; lines arrive as deltas and are appended in place. */
+  const rows = new Map<number, { row: HTMLDivElement; txt: HTMLDivElement }>();
+  let rowsNoteId: string | null = null;
+  const hint = document.createElement('div');
+  hint.className = 'hint';
+  /** Page-level listeners, removed together when the player is closed. */
+  const life = new AbortController();
   let tipTimer: ReturnType<typeof setTimeout> | undefined;
   let closeTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -214,42 +220,71 @@ import type { MiniCommand, MiniMessage, MiniSnapshot } from '../lib/messages';
     void savePrefs();
   }
 
-  function renderTranscript(s: MiniSnapshot) {
-    const live = !!s.recording;
-    const key = `${s.segments.length}|${s.segments.at(-1)?.text.length ?? 0}|${live}|${s.recording?.paused}|${s.pending}`;
-    if (key === renderedKey) return;
-    renderedKey = key;
+  function makeRow(seg: MiniSnapshot['segments'][number]) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    const ts = document.createElement('span');
+    ts.className = 'ts';
+    ts.textContent = clock(seg.startMs);
+    const txt = document.createElement('div');
+    txt.className = 'txt';
+    row.append(ts, txt);
+    return { row, txt };
+  }
+
+  /** Applies new or changed lines; only a reset (or another note) clears the list. */
+  function applySegments(msg: MiniSnapshot) {
     const box = els.transcript;
     const follow = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
-    box.replaceChildren();
-    for (const seg of s.segments) {
-      const row = document.createElement('div');
-      row.className = 'row';
-      const ts = document.createElement('span');
-      ts.className = 'ts';
-      ts.textContent = clock(seg.startMs);
-      const txt = document.createElement('div');
-      txt.className = 'txt';
-      txt.textContent = seg.text;
-      row.append(ts, txt);
-      box.append(row);
+    const noteId = msg.note?.id ?? null;
+    if (msg.reset || noteId !== rowsNoteId) {
+      rows.clear();
+      box.replaceChildren();
+      rowsNoteId = noteId;
     }
-    const hint = document.createElement('div');
-    hint.className = 'hint';
-    if (live) {
-      hint.textContent = s.recording!.paused
+    for (const seg of msg.segments) {
+      let entry = rows.get(seg.index);
+      if (!entry) {
+        entry = makeRow(seg);
+        rows.set(seg.index, entry);
+        // Lines normally arrive in order; a retried earlier line is slotted into place.
+        let before: Element | null = null;
+        for (const [index, other] of rows) {
+          if (index > seg.index && (!before || index < Number((before as HTMLElement).dataset.index))) before = other.row;
+        }
+        entry.row.dataset.index = String(seg.index);
+        box.insertBefore(entry.row, before);
+      }
+      entry.txt.textContent = seg.text;
+    }
+    renderHint(msg);
+    if (follow) box.scrollTop = box.scrollHeight;
+  }
+
+  function renderHint(s: MiniSnapshot) {
+    let text = '';
+    let spinning = false;
+    if (s.recording) {
+      text = s.recording.paused
         ? 'Paused.'
-        : s.segments.length
+        : rows.size
           ? 'Listening… new lines every 15–30 seconds'
           : 'Listening… the first lines appear after about 20 seconds';
     } else if (s.pending > 0) {
-      hint.innerHTML = '<span class="spinner"></span>';
-      hint.append('Transcribing the last part…');
-    } else if (!s.segments.length) {
-      hint.textContent = 'No speech was picked up.';
+      text = 'Transcribing the last part…';
+      spinning = true;
+    } else if (!rows.size) {
+      text = 'No speech was picked up.';
     }
-    if (hint.textContent) box.append(hint);
-    if (follow) box.scrollTop = box.scrollHeight;
+    hint.replaceChildren();
+    if (spinning) {
+      const spinner = document.createElement('span');
+      spinner.className = 'spinner';
+      hint.append(spinner);
+    }
+    hint.append(text);
+    if (text) els.transcript.append(hint); // keeps it last
+    else hint.remove();
   }
 
   function render() {
@@ -271,7 +306,7 @@ import type { MiniCommand, MiniMessage, MiniSnapshot } from '../lib/messages';
     } else {
       renderDone(s.note?.status ?? 'done', !!s.note?.hasSummary, s.note?.projectName ?? '', s.note?.autoSummary ?? false);
     }
-    renderTranscript(s);
+    renderHint(s);
   }
 
   function renderDone(status: string, hasSummary: boolean, projectName: string, autoSummary: boolean, error?: string) {
@@ -334,6 +369,7 @@ import type { MiniCommand, MiniMessage, MiniSnapshot } from '../lib/messages';
       if (msg.type === 'level') onLevel(msg.level);
       else {
         snap = msg;
+        applySegments(msg);
         render();
       }
     });
@@ -353,7 +389,7 @@ import type { MiniCommand, MiniMessage, MiniSnapshot } from '../lib/messages';
       note: { status: string; hasSummary: boolean; projectName: string; error?: string } | null;
     }>({ type: 'NOTE_STATUS', noteId });
     if (!reply?.ok || !reply.note) return destroy(); // deleted (e.g. nothing was said) or extension gone
-    snap = { ...snap!, recording: null, pending: 0 };
+    snap = { ...snap!, recording: null, pending: 0, segments: [] };
     render();
     renderDone(reply.note.status, reply.note.hasSummary, reply.note.projectName, !!snap.note?.autoSummary, reply.note.error);
     clearTimeout(closeTimer);
@@ -461,16 +497,21 @@ import type { MiniCommand, MiniMessage, MiniSnapshot } from '../lib/messages';
     host.style.bottom = `${Math.max(8, window.innerHeight - r.bottom)}px`;
   }
   els.grip.addEventListener('pointerup', reanchor);
-  window.addEventListener('resize', () => {
-    const r = host.getBoundingClientRect();
-    if (r.right > window.innerWidth || r.bottom > window.innerHeight) {
-      host.style.right = '20px';
-      host.style.bottom = '20px';
-    }
-  });
+  window.addEventListener(
+    'resize',
+    () => {
+      const r = host.getBoundingClientRect();
+      if (r.right > window.innerWidth || r.bottom > window.innerHeight) {
+        host.style.right = '20px';
+        host.style.bottom = '20px';
+      }
+    },
+    { signal: life.signal },
+  );
 
   // ------------------------------------------------------------ lifecycle
   function destroy() {
+    life.abort();
     clearInterval(ticker);
     clearTimeout(tipTimer);
     clearTimeout(closeTimer);
@@ -494,9 +535,13 @@ import type { MiniCommand, MiniMessage, MiniSnapshot } from '../lib/messages';
 
   // Coming back with the Back button restores this page from the back/forward
   // cache with its port closed, so reconnect to pick up the live state again.
-  window.addEventListener('pageshow', (e) => {
-    if (e.persisted && scope.__toruMini) scope.__toruMini.show();
-  });
+  window.addEventListener(
+    'pageshow',
+    (e) => {
+      if (e.persisted && scope.__toruMini) scope.__toruMini.show();
+    },
+    { signal: life.signal },
+  );
 
   document.documentElement.append(host);
   void loadPrefs();

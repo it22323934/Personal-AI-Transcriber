@@ -1,52 +1,33 @@
-// Pure audio helpers used by the offscreen recorder.
+// Audio helpers for the offscreen recorder. The worklet already delivers
+// 16 kHz mono 16-bit PCM, so a chunk is encoded with a single allocation.
 
-export function rms(samples: Float32Array): number {
-  let sum = 0;
-  for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
-  return samples.length ? Math.sqrt(sum / samples.length) : 0;
-}
-
-export function concat(blocks: Float32Array[], totalLength: number): Float32Array {
-  const out = new Float32Array(totalLength);
-  let offset = 0;
+/** Largest absolute sample across the blocks (0–32768). */
+export function peak(blocks: Int16Array[]): number {
+  let max = 0;
   for (const b of blocks) {
-    out.set(b, offset);
-    offset += b.length;
+    for (let i = 0; i < b.length; i++) {
+      const v = b[i] < 0 ? -b[i] : b[i];
+      if (v > max) max = v;
+    }
   }
-  return out;
+  return max;
 }
 
-/** Box-filter downsampling: averages each output window, which also low-passes. */
-export function downsample(input: Float32Array, inRate: number, outRate: number): Float32Array {
-  if (outRate >= inRate) return input;
-  const ratio = inRate / outRate;
-  const outLength = Math.floor(input.length / ratio);
-  const out = new Float32Array(outLength);
-  for (let i = 0; i < outLength; i++) {
-    const start = Math.floor(i * ratio);
-    const end = Math.min(input.length, Math.floor((i + 1) * ratio));
-    let sum = 0;
-    for (let j = start; j < end; j++) sum += input[j];
-    out[i] = end > start ? sum / (end - start) : 0;
-  }
-  return out;
+/** Gain that lifts quiet recordings to a healthy level for the transcriber (max ×4). */
+export function normalizeGain(peakValue: number): number {
+  if (peakValue === 0 || peakValue >= 16384) return 1;
+  return Math.min(4, 29491 / peakValue); // 29491 ≈ 0.9 of full scale
 }
 
-/** Lifts quiet recordings so the transcriber gets a healthy level (max ×4). */
-export function normalize(samples: Float32Array): Float32Array {
-  let peak = 0;
-  for (let i = 0; i < samples.length; i++) peak = Math.max(peak, Math.abs(samples[i]));
-  if (peak === 0 || peak >= 0.5) return samples;
-  const gain = Math.min(4, 0.9 / peak);
-  const out = new Float32Array(samples.length);
-  for (let i = 0; i < samples.length; i++) out[i] = samples[i] * gain;
-  return out;
-}
-
-/** 16-bit mono PCM WAV. 16 kHz speech is ~1.9 MB per minute. */
-export function encodeWav(samples: Float32Array, sampleRate: number): Blob {
-  const bytes = samples.length * 2;
-  const view = new DataView(new ArrayBuffer(44 + bytes));
+/**
+ * 16-bit mono PCM WAV written straight into one buffer (~1.9 MB per minute at
+ * 16 kHz). Int16Array uses the platform's byte order, which is little-endian
+ * on every platform Chrome runs on — the order WAV requires.
+ */
+export function encodeWav(blocks: Int16Array[], length: number, sampleRate: number, gain = 1): Blob {
+  const bytes = length * 2;
+  const buffer = new ArrayBuffer(44 + bytes);
+  const view = new DataView(buffer);
   const ascii = (offset: number, s: string) => {
     for (let i = 0; i < s.length; i++) view.setUint8(offset + i, s.charCodeAt(i));
   };
@@ -63,10 +44,19 @@ export function encodeWav(samples: Float32Array, sampleRate: number): Blob {
   view.setUint16(34, 16, true); // bits per sample
   ascii(36, 'data');
   view.setUint32(40, bytes, true);
-  let o = 44;
-  for (let i = 0; i < samples.length; i++, o += 2) {
-    const s = Math.max(-1, Math.min(1, samples[i]));
-    view.setInt16(o, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+
+  const out = new Int16Array(buffer, 44, length);
+  let o = 0;
+  for (const b of blocks) {
+    if (gain === 1) {
+      out.set(b, o);
+    } else {
+      for (let i = 0; i < b.length; i++) {
+        const v = b[i] * gain;
+        out[o + i] = v > 32767 ? 32767 : v < -32768 ? -32768 : v;
+      }
+    }
+    o += b.length;
   }
-  return new Blob([view.buffer], { type: 'audio/wav' });
+  return new Blob([buffer], { type: 'audio/wav' });
 }

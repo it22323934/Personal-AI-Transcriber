@@ -35,6 +35,8 @@ export interface MiniSnapshot {
     status: string;
     hasSummary: boolean;
   } | null;
+  /** True: `segments` is the whole transcript. False: only lines this player hasn't seen yet. */
+  reset: boolean;
   segments: { index: number; startMs: number; text: string }[];
   pending: number;
 }

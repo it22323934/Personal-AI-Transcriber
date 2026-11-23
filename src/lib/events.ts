@@ -9,6 +9,8 @@ export type AppEvent =
   | { type: 'recording' }
   | { type: 'settings' }
   | { type: 'level'; level: number }
+  /** A page showing a level meter says so every couple of seconds; levels only flow while someone watches. */
+  | { type: 'level-watch' }
   | { type: 'toast'; message: string; tone?: 'error' | 'info' };
 
 type Listener = (event: AppEvent) => void;

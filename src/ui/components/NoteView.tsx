@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { downloadFile, noteToMarkdown, safeFilename } from '../../lib/export';
 import { errorMessage, formatClock, formatDate, formatDuration, hostname, timeAgo } from '../../lib/format';
-import { generateSummary, retryPendingChunks } from '../../lib/pipeline';
+import { discardAudio, generateSummary, retryPendingChunks } from '../../lib/pipeline';
 import * as store from '../../lib/store';
 import type { Note, Project, RecordingState, Segment } from '../../lib/types';
 import { useDebouncedSave, useLive, useNote, useProjects } from '../hooks';
@@ -90,6 +90,21 @@ export function NoteView(props: {
       toast(errorMessage(e), 'error');
     } finally {
       setBusy(null);
+    }
+  }
+
+  async function discard() {
+    const ok = await confirm({
+      title: 'Discard the waiting audio?',
+      message: `${pending} part${pending === 1 ? '' : 's'} of audio couldn’t be transcribed and ${pending === 1 ? 'is' : 'are'} taking up space. The transcript you already have is kept.`,
+      confirmLabel: 'Discard audio',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await discardAudio(noteId);
+    } catch (e) {
+      toast(errorMessage(e), 'error');
     }
   }
 
@@ -199,9 +214,14 @@ export function NoteView(props: {
             {!live && (pending > 0 || (segments?.length ?? 0) > 0) && (
               <div className="callout-actions">
                 {pending > 0 ? (
-                  <button className="btn btn-sm btn-light" onClick={retry} disabled={working}>
-                    <IconRefresh size={14} /> {busy === 'retry' ? 'Retrying…' : 'Retry transcription'}
-                  </button>
+                  <>
+                    <button className="btn btn-sm btn-light" onClick={retry} disabled={working}>
+                      <IconRefresh size={14} /> {busy === 'retry' ? 'Retrying…' : 'Retry transcription'}
+                    </button>
+                    <button className="btn btn-sm btn-ghost" onClick={discard} disabled={working}>
+                      Discard audio
+                    </button>
+                  </>
                 ) : (
                   <button className="btn btn-sm btn-light" onClick={summarise} disabled={working}>
                     <IconSparkle size={14} /> {note.summary ? 'Try again' : 'Write study notes'}

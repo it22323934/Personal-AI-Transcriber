@@ -84,6 +84,29 @@ export async function getAllByIndex<T>(name: StoreName, index: string, value: ID
   return done(os.index(index).getAll(value)) as Promise<T[]>;
 }
 
+export async function getRange<T>(name: StoreName, range: IDBKeyRange): Promise<T[]> {
+  const { os } = await store(name, 'readonly');
+  return done(os.getAll(range)) as Promise<T[]>;
+}
+
+export async function getAllKeys(name: StoreName): Promise<IDBValidKey[]> {
+  const { os } = await store(name, 'readonly');
+  return done(os.getAllKeys());
+}
+
+export async function deleteKeys(name: StoreName, keys: IDBValidKey[]): Promise<void> {
+  if (!keys.length) return;
+  const { tx, os } = await store(name, 'readwrite');
+  for (const k of keys) os.delete(k);
+  await complete(tx);
+}
+
+export async function clear(name: StoreName): Promise<void> {
+  const { tx, os } = await store(name, 'readwrite');
+  os.clear();
+  await complete(tx);
+}
+
 export async function countByIndex(name: StoreName, index: string, value: IDBValidKey): Promise<number> {
   const { os } = await store(name, 'readonly');
   return done(os.index(index).count(value));
