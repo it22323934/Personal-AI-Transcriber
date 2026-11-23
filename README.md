@@ -99,7 +99,7 @@ These are the prices I last saw; check OpenAI's pricing page. Silent stretches a
 - Notes, transcripts, projects and your API key live in the extension's own storage (IndexedDB) in this Chrome profile.
 - **Removing the extension deletes that data.** Reloading or rebuilding it is safe. Use **Settings → Export backup** now and then; **Import backup** restores it. The backup leaves out your API key.
 - The manifest pins the extension ID, so moving or re-loading the `dist` folder keeps your data.
-- Audio is kept only until its chunk is transcribed, then deleted.
+- Audio is kept only until its chunk is transcribed, then deleted. Audio that fails (e.g. a bad API key) waits for **Retry**. That's about 1 MB per 30 s, so **Settings → Your data** shows how much space TORU uses and can **discard waiting audio**. Each affected note also has its own **Discard audio** button. Leftovers from deleted notes are cleaned up automatically.
 
 ## If something goes wrong
 
@@ -120,6 +120,13 @@ npm run test:e2e   # builds, loads dist/ into your Chrome (throwaway profile) an
 ```
 
 The end-to-end test seeds data, screenshots every view into `.e2e-out/`, then runs full recordings: live chunks, pause/resume, auto-split on navigation, summaries on and off, the mini player on a real web page (expand, pause, AI-notes switch, re-appearing on the next lecture, stop), and clean-up. It uses a synthetic audio stream and a mocked OpenAI API, so it costs nothing. Set `CHROME_PATH` if Chrome is installed somewhere else.
+
+### Memory and performance
+
+- **Recording:** the audio worklet downmixes and resamples to 16 kHz 16-bit on the audio thread, so the recorder only ever holds the small format and encodes each WAV with a single allocation. Measured over a recording: peak audio memory 2.6 MB (was 15.9 MB).
+- **Search:** it runs once typing pauses (250 ms). While the search view is open, each lecture's transcript is kept as one string, built with `join`, since a global regex `replace` leaves word-sized string pieces costing ~3× the memory. The cache is released when search closes. With 300 lectures: about 0.4 s of CPU per typed query (was 1.8–3.5 s) and a 20 MB peak (was 33–42 MB).
+- **Live updates:** each audio chunk emits several change events; open views reload once per burst. The mini player receives only new transcript lines. Level meters only stream while one is on screen.
+- **Measuring:** every TORU page (side panel, library, offscreen recorder) runs in **one renderer process and shares one JS heap**. Measure one page at a time, or the numbers include the others. ArrayBuffers (audio) sit outside the JS heap; read them with CDP `Runtime.getHeapUsage` → `backingStorageSize`.
 
 ### How it fits together
 
