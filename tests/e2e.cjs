@@ -748,8 +748,12 @@ Microsoft Entra ID (formerly Azure Active Directory) is Azure’s cloud identity
     }));
     await patchSettings({ summaryModel: 'gpt-3.5-turbo' });
     await lib.goto(`chrome-extension://${extId}/library.html#/note/long1`, { waitUntil: 'networkidle0' });
+    // Only the #hash changed, so wait for the new lecture to render before picking its tab.
+    await lib.waitForFunction(() => document.querySelector('.note-title-input')?.value === 'All-day Azure workshop', { timeout: 10000 });
+    await sleep(300);
     await clickTab('Ask');
-    await sleep(500);
+    await lib.waitForSelector('.ask-meter', { timeout: 10000 });
+    await sleep(300);
     const trimmedWarning = await lib.$eval('.chat .callout-warn', (e) => e.textContent).catch(() => '');
     check(trimmedWarning.includes('too long to send in full') && trimmedWarning.includes('Use study notes only'), 'a lecture too long for the model warns and offers study notes only');
     check((await lib.$eval('.ask-meter', (e) => e.textContent)).includes('of gpt-3.5-turbo'), 'the meter measures against the chosen model');
