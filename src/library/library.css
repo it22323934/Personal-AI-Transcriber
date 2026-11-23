@@ -222,7 +222,7 @@
 }
 .step.done .step-n {
   background: var(--surface-active);
-  color: var(--lime);
+  color: var(--accent);
 }
 .step h3 {
   margin: 14px 0 6px;
@@ -240,7 +240,7 @@
   padding: 0;
   border: 0;
   background: none;
-  color: var(--lime);
+  color: var(--accent);
   font-size: inherit;
   text-decoration: underline;
   text-underline-offset: 2px;

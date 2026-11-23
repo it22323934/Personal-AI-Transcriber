@@ -27,11 +27,17 @@ import type { MiniCommand, MiniMessage, MiniSnapshot } from '../lib/messages';
   :host { all: initial; }
   * { box-sizing: border-box; }
   .mini {
-    --bg: #161613; --surface: #1f1f1b; --hover: #2a2a25; --line: rgba(236,234,222,.1); --line2: rgba(236,234,222,.18);
-    --text: #ecebe3; --text2: #b3b1a5; --text3: #7c7a70; --lime: #cfe05b; --olive: #5d7113; --olive-text: #f5f8e6; --red: #f2555a;
+    --bg: #161613; --glass: rgba(22,22,19,.96); --surface: #1f1f1b; --hover: #2a2a25; --line: rgba(236,234,222,.1); --line2: rgba(236,234,222,.18);
+    --text: #ecebe3; --text2: #b3b1a5; --text3: #7c7a70; --lime: #cfe05b; --meter: #cfe05b; --olive: #5d7113; --olive-hover: #6b8217; --olive-text: #f5f8e6; --red: #f2555a;
+    --strong-hover: #ffffff; --lime-soft: rgba(207,224,91,.14); --scroll: rgba(236,234,222,.15); --shadow: rgba(0,0,0,.45);
     display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
     font: 400 13px/1.5 'Inter Variable', Inter, 'Segoe UI', system-ui, sans-serif; color: var(--text);
     -webkit-font-smoothing: antialiased;
+  }
+  .mini.light {
+    --bg: #ffffff; --glass: rgba(255,255,255,.96); --surface: #f4f3ee; --hover: #ecebe5; --line: rgba(31,30,26,.08); --line2: rgba(31,30,26,.14);
+    --text: #1f1e1a; --text2: #5a584f; --text3: #75736a; --lime: #5b6d0f; --meter: #8fa61b; --olive: #56690f; --olive-hover: #4a5b0c; --olive-text: #fafcef; --red: #d93a40;
+    --strong-hover: #000000; --lime-soft: rgba(124,145,20,.12); --scroll: rgba(31,30,26,.18); --shadow: rgba(40,38,30,.18);
   }
   .mini.below { flex-direction: column-reverse; }
   button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; padding: 0; }
@@ -40,8 +46,8 @@ import type { MiniCommand, MiniMessage, MiniSnapshot } from '../lib/messages';
 
   .bar {
     display: flex; align-items: center; gap: 4px; height: 46px; padding: 0 6px 0 4px;
-    background: rgba(22,22,19,.96); border: 1px solid var(--line2); border-radius: 999px;
-    box-shadow: 0 12px 36px rgba(0,0,0,.45); backdrop-filter: blur(10px);
+    background: var(--glass); border: 1px solid var(--line2); border-radius: 999px;
+    box-shadow: 0 12px 36px var(--shadow); backdrop-filter: blur(10px);
   }
   .grip { width: 18px; height: 30px; display: grid; place-items: center; color: var(--text3); cursor: grab; touch-action: none; }
   .grip:active { cursor: grabbing; }
@@ -52,7 +58,7 @@ import type { MiniCommand, MiniMessage, MiniSnapshot } from '../lib/messages';
   @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(242,85,90,.55); } 70% { box-shadow: 0 0 0 7px rgba(242,85,90,0); } 100% { box-shadow: 0 0 0 0 rgba(242,85,90,0); } }
   .time { font: 500 13px/1 ui-monospace, 'SF Mono', Consolas, monospace; font-variant-numeric: tabular-nums; min-width: 38px; }
   .levels { display: flex; align-items: center; gap: 2px; height: 16px; }
-  .levels span { width: 3px; min-height: 3px; border-radius: 2px; background: var(--lime); transition: height 90ms linear; }
+  .levels span { width: 3px; min-height: 3px; border-radius: 2px; background: var(--meter); transition: height 90ms linear; }
   .paused .levels { opacity: .3; }
   .label { color: var(--text2); font-size: 12.5px; display: flex; align-items: center; gap: 4px; }
   .chev { transition: transform .15s; }
@@ -62,26 +68,26 @@ import type { MiniCommand, MiniMessage, MiniSnapshot } from '../lib/messages';
   .icon { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 50%; color: var(--text2); }
   .icon:hover { background: var(--hover); color: var(--text); }
   .stop { display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 13px; border-radius: 999px; background: var(--text); color: var(--bg); font-weight: 600; font-size: 12.5px; }
-  .stop:hover { background: #fff; }
+  .stop:hover { background: var(--strong-hover); }
   .primary { display: flex; align-items: center; height: 32px; padding: 0 13px; border-radius: 999px; background: var(--olive); color: var(--olive-text); font-weight: 600; font-size: 12.5px; }
-  .primary:hover { background: #6b8217; }
+  .primary:hover { background: var(--olive-hover); }
   .done-text { display: grid; gap: 1px; padding: 0 8px 0 6px; line-height: 1.25; }
   .done-text strong { font-weight: 600; font-size: 12.5px; }
   .done-text span { color: var(--text3); font-size: 11.5px; }
-  .check { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: rgba(207,224,91,.14); color: var(--lime); margin-left: 4px; }
+  .check { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--lime-soft); color: var(--lime); margin-left: 4px; }
 
   .sheet {
     width: 340px; max-width: calc(100vw - 40px); display: none; flex-direction: column;
     max-height: min(440px, calc(100vh - 110px));
-    background: rgba(22,22,19,.97); border: 1px solid var(--line2); border-radius: 18px;
-    box-shadow: 0 18px 48px rgba(0,0,0,.5); backdrop-filter: blur(10px); overflow: hidden;
+    background: var(--glass); border: 1px solid var(--line2); border-radius: 18px;
+    box-shadow: 0 18px 48px var(--shadow); backdrop-filter: blur(10px); overflow: hidden;
   }
   .expanded .sheet { display: flex; }
   .sheet-head { display: flex; align-items: flex-start; gap: 8px; padding: 14px 10px 10px 16px; border-bottom: 1px solid var(--line); }
   .sheet-head .grow { flex: 1; min-width: 0; }
   .eyebrow { font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text3); }
   .title { margin: 3px 0 0; font: 400 19px/1.2 'Newsreader Variable', Georgia, 'Times New Roman', serif; letter-spacing: -.01em; color: var(--text); }
-  .transcript { flex: 1; overflow-y: auto; padding: 8px 16px 10px; scrollbar-width: thin; scrollbar-color: rgba(236,234,222,.15) transparent; }
+  .transcript { flex: 1; overflow-y: auto; padding: 8px 16px 10px; scrollbar-width: thin; scrollbar-color: var(--scroll) transparent; }
   .row { display: grid; grid-template-columns: 38px 1fr; gap: 8px; padding: 6px 0; }
   .ts { font: 11px/1.9 ui-monospace, Consolas, monospace; color: var(--text3); }
   .txt { line-height: 1.6; }
@@ -93,7 +99,7 @@ import type { MiniCommand, MiniMessage, MiniSnapshot } from '../lib/messages';
   .switch input:checked { background: var(--olive); border-color: transparent; }
   .switch input:checked::before { transform: translateX(12px); background: var(--olive-text); }
   .link { color: var(--lime); font-size: 12px; text-decoration: underline; text-underline-offset: 2px; }
-  .tip { max-width: 300px; padding: 8px 12px; border-radius: 12px; background: #2a2a25; color: var(--text); font-size: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+  .tip { max-width: 300px; padding: 8px 12px; border-radius: 12px; background: var(--hover); color: var(--text); font-size: 12px; box-shadow: 0 8px 24px var(--shadow); }
   .spinner { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid currentColor; border-right-color: transparent; animation: spin .8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
   [hidden] { display: none !important; }
@@ -532,6 +538,36 @@ import type { MiniCommand, MiniMessage, MiniSnapshot } from '../lib/messages';
       connect();
     },
   };
+
+  // ---------------------------------------------------------------- theme
+  // Follows TORU's theme setting ('system' | 'light' | 'dark'), mirrored to
+  // chrome.storage.local by the extension pages; 'system' tracks the OS.
+  const systemLight = window.matchMedia('(prefers-color-scheme: light)');
+  let themePref = 'system';
+  const applyTheme = () => {
+    mini.classList.toggle('light', themePref === 'light' || (themePref === 'system' && systemLight.matches));
+  };
+  systemLight.addEventListener('change', applyTheme, { signal: life.signal });
+  const onStorage = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
+    if (area === 'local' && changes.toruTheme) {
+      themePref = String(changes.toruTheme.newValue ?? 'system');
+      applyTheme();
+    }
+  };
+  try {
+    chrome.storage.onChanged.addListener(onStorage);
+    life.signal.addEventListener('abort', () => chrome.storage.onChanged.removeListener(onStorage));
+    chrome.storage.local.get('toruTheme').then(
+      (r) => {
+        themePref = String(r.toruTheme ?? 'system');
+        applyTheme();
+      },
+      () => {},
+    );
+  } catch {
+    // extension context gone
+  }
+  applyTheme();
 
   // Coming back with the Back button restores this page from the back/forward
   // cache with its port closed, so reconnect to pick up the live state again.

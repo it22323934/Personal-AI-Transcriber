@@ -5,14 +5,32 @@ import { listModels } from '../../lib/openai';
 import { discardAudio } from '../../lib/pipeline';
 import { DEFAULT_SUMMARY_PROMPT } from '../../lib/prompts';
 import * as store from '../../lib/store';
-import type { Settings } from '../../lib/types';
+import type { Settings, ThemePreference } from '../../lib/types';
 import { IconCheck, IconDownload, IconEye, IconEyeOff, IconUpload } from '../icons';
 import { toast } from '../toast';
+import { applyTheme } from '../theme';
 import { LANGUAGES } from './languages';
 import { Modal, useConfirm } from './Modal';
+import { ComboInput, Select } from './Select';
 
-const TRANSCRIBE_MODELS = ['gpt-4o-mini-transcribe', 'gpt-4o-transcribe', 'whisper-1'];
-const SUMMARY_MODELS = ['gpt-5-mini', 'gpt-5', 'gpt-5-nano', 'gpt-4.1-mini', 'gpt-4.1', 'gpt-4o-mini'];
+const TRANSCRIBE_MODELS = [
+  { value: 'gpt-4o-mini-transcribe', description: 'Fast and low cost (default)' },
+  { value: 'gpt-4o-transcribe', description: 'Most accurate, about twice the cost' },
+  { value: 'whisper-1', description: 'The original Whisper model' },
+];
+const SUMMARY_MODELS = [
+  { value: 'gpt-5-mini', description: 'Balanced quality and cost (default)' },
+  { value: 'gpt-5', description: 'Best answers, slower and pricier' },
+  { value: 'gpt-5-nano', description: 'Cheapest, fine for short lectures' },
+  { value: 'gpt-4.1-mini', description: 'Fast, no reasoning step' },
+  { value: 'gpt-4.1', description: 'Strong, no reasoning step' },
+  { value: 'gpt-4o-mini', description: 'Older and cheap' },
+];
+const THEMES: { value: ThemePreference; label: string }[] = [
+  { value: 'system', label: 'System' },
+  { value: 'light', label: 'Light' },
+  { value: 'dark', label: 'Dark' },
+];
 
 export function SettingsModal({ initial, onClose }: { initial: Settings; onClose: () => void }) {
   const [draft, setDraft] = useState<Settings>(initial);
@@ -111,6 +129,31 @@ export function SettingsModal({ initial, onClose }: { initial: Settings; onClose
       }
     >
       <section className="modal-section">
+        <h3>Appearance</h3>
+        <div className="field">
+          <div className="seg" role="radiogroup" aria-label="Theme" style={{ justifySelf: 'start' }}>
+            {THEMES.map((t) => (
+              <button
+                key={t.value}
+                role="radio"
+                aria-selected={draft.theme === t.value}
+                aria-checked={draft.theme === t.value}
+                onClick={() => {
+                  // Applies straight away, so you can see it before saving the rest.
+                  set('theme', t.value);
+                  applyTheme(t.value);
+                  void store.saveSettings({ theme: t.value });
+                }}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <div className="field-hint">System follows your Windows light or dark setting.</div>
+        </div>
+      </section>
+
+      <section className="modal-section">
         <h3>OpenAI</h3>
         <div className="field">
           <label htmlFor="apiKey">API key</label>
@@ -164,28 +207,22 @@ export function SettingsModal({ initial, onClose }: { initial: Settings; onClose
         <div className="grid-2">
           <div className="field">
             <label htmlFor="tmodel">Model</label>
-            <input
+            <ComboInput
               id="tmodel"
-              className="input"
-              list="transcribe-models"
               value={draft.transcribeModel}
-              onChange={(e) => set('transcribeModel', e.target.value)}
+              onChange={(v) => set('transcribeModel', v)}
+              suggestions={TRANSCRIBE_MODELS}
             />
-            <datalist id="transcribe-models">
-              {TRANSCRIBE_MODELS.map((m) => (
-                <option key={m} value={m} />
-              ))}
-            </datalist>
           </div>
           <div className="field">
             <label htmlFor="lang">Default language</label>
-            <select id="lang" className="input" value={draft.language} onChange={(e) => set('language', e.target.value)}>
-              {LANGUAGES.map(([code, label]) => (
-                <option key={code} value={code}>
-                  {label}
-                </option>
-              ))}
-            </select>
+            <Select
+              id="lang"
+              ariaLabel="Default language"
+              value={draft.language}
+              options={LANGUAGES.map(([code, label]) => ({ value: code, label }))}
+              onChange={(v) => set('language', v)}
+            />
           </div>
         </div>
         <div className="field-hint">
@@ -234,21 +271,16 @@ export function SettingsModal({ initial, onClose }: { initial: Settings; onClose
       </section>
 
       <section className="modal-section">
-        <h3>Study notes</h3>
+        <h3>Study notes and questions</h3>
         <div className="field">
           <label htmlFor="smodel">Model</label>
-          <input
+          <ComboInput
             id="smodel"
-            className="input"
-            list="summary-models"
             value={draft.summaryModel}
-            onChange={(e) => set('summaryModel', e.target.value)}
+            onChange={(v) => set('summaryModel', v)}
+            suggestions={SUMMARY_MODELS}
           />
-          <datalist id="summary-models">
-            {SUMMARY_MODELS.map((m) => (
-              <option key={m} value={m} />
-            ))}
-          </datalist>
+          <div className="field-hint">Used for the study notes and for answering your questions in the Ask tab.</div>
         </div>
         <label className="switch">
           <input

@@ -4,6 +4,7 @@ import { callBackground, callOffscreen } from '../lib/messages';
 import * as store from '../lib/store';
 import type { Note, Project, RecordingState } from '../lib/types';
 import { NoteRow, LevelBars } from '../ui/components/bits';
+import { Select } from '../ui/components/Select';
 import { Empty, NoteView } from '../ui/components/NoteView';
 import { ProjectModal } from '../ui/components/ProjectModal';
 import { SettingsModal } from '../ui/components/SettingsModal';
@@ -209,7 +210,7 @@ export function SidePanel() {
           // Compact recorder while a note is open, so the note gets the room.
           <section className="card recorder recorder-compact">
             <div className="row">
-              <ProjectSelect projects={projects ?? []} value={projectId} onChange={chooseProject} />
+              <ProjectSelect projects={projects ?? []} value={projectId} onChange={chooseProject} onNewProject={() => setModal('project')} />
               <button
                 className={`icon-btn toggle-btn ${summaryDefault ? 'on' : ''}`}
                 aria-pressed={summaryDefault}
@@ -237,15 +238,7 @@ export function SidePanel() {
             <div className="field">
               <span className="eyebrow">Save to</span>
               <div className="row">
-                <ProjectSelect projects={projects ?? []} value={projectId} onChange={chooseProject} />
-                <button
-                  className="icon-btn"
-                  title="New project"
-                  aria-label="New project"
-                  onClick={() => setModal('project')}
-                >
-                  <IconPlus />
-                </button>
+                <ProjectSelect projects={projects ?? []} value={projectId} onChange={chooseProject} onNewProject={() => setModal('project')} />
               </div>
             </div>
 
@@ -343,20 +336,22 @@ function StartError({ message }: { message: string }) {
   );
 }
 
-function ProjectSelect(props: { projects: Project[]; value?: string; onChange: (id: string) => void }) {
+function ProjectSelect(props: {
+  projects: Project[];
+  value?: string;
+  onChange: (id: string) => void;
+  onNewProject?: () => void;
+}) {
   return (
-    <select
-      className="select-pill grow"
-      aria-label="Project"
-      value={props.value ?? ''}
-      onChange={(e) => props.onChange(e.target.value)}
-    >
-      {props.projects.map((p) => (
-        <option key={p.id} value={p.id}>
-          {p.name}
-        </option>
-      ))}
-    </select>
+    <Select
+      variant="pill"
+      className="grow"
+      ariaLabel="Project"
+      value={props.value}
+      options={props.projects.map((p) => ({ value: p.id, label: p.name, dot: p.color }))}
+      onChange={props.onChange}
+      action={props.onNewProject && { label: 'New project…', icon: <IconPlus size={14} />, onSelect: props.onNewProject }}
+    />
   );
 }
 

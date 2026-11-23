@@ -3,9 +3,9 @@
 // worker), which is why all app data lives here rather than chrome.storage.
 
 const DB_NAME = 'toru';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // v2: "messages" store for the Ask conversations
 
-export type StoreName = 'projects' | 'notes' | 'segments' | 'chunks' | 'meta';
+export type StoreName = 'projects' | 'notes' | 'segments' | 'chunks' | 'messages' | 'meta';
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -26,6 +26,9 @@ function openDb(): Promise<IDBDatabase> {
         }
         if (!db.objectStoreNames.contains('chunks')) {
           db.createObjectStore('chunks', { keyPath: ['noteId', 'index'] }).createIndex('noteId', 'noteId');
+        }
+        if (!db.objectStoreNames.contains('messages')) {
+          db.createObjectStore('messages', { keyPath: ['noteId', 'index'] }).createIndex('noteId', 'noteId');
         }
         if (!db.objectStoreNames.contains('meta')) {
           db.createObjectStore('meta', { keyPath: 'key' });
@@ -87,6 +90,11 @@ export async function getAllByIndex<T>(name: StoreName, index: string, value: ID
 export async function getRange<T>(name: StoreName, range: IDBKeyRange): Promise<T[]> {
   const { os } = await store(name, 'readonly');
   return done(os.getAll(range)) as Promise<T[]>;
+}
+
+export async function getRangeKeys(name: StoreName, range: IDBKeyRange): Promise<IDBValidKey[]> {
+  const { os } = await store(name, 'readonly');
+  return done(os.getAllKeys(range));
 }
 
 export async function getAllKeys(name: StoreName): Promise<IDBValidKey[]> {

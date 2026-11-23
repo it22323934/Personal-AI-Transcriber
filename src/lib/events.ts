@@ -6,6 +6,7 @@ export type AppEvent =
   | { type: 'notes'; noteId?: string }
   | { type: 'segments'; noteId: string }
   | { type: 'chunks'; noteId: string }
+  | { type: 'messages'; noteId: string }
   | { type: 'recording' }
   | { type: 'settings' }
   | { type: 'level'; level: number }

@@ -94,6 +94,8 @@ Microsoft Entra ID (formerly Azure Active Directory) is Azure’s cloud identity
     async function openPage(file, width, height) {
       const page = await browser.newPage();
       await page.setViewport({ width, height, deviceScaleFactor: 1 });
+      // Headless Chrome reports a light system theme; the main flow is shot in dark mode.
+      await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'dark' }]);
       page.on('console', (m) => (m.type() === 'error' || m.type() === 'warn') && errors.push(`[${file}] ${m.text()}`));
       page.on('pageerror', (e) => errors.push(`[${file}] pageerror: ${e.message}`));
       await page.goto(`chrome-extension://${extId}/${file}`, { waitUntil: 'networkidle0' });
@@ -102,6 +104,8 @@ Microsoft Entra ID (formerly Azure Active Directory) is Azure’s cloud identity
       return page;
     }
     const shot = async (page, name, full = false) => {
+      // Background tabs pause CSS transitions; bring the page forward so the shot shows settled styles.
+      await page.bringToFront();
       await sleep(350);
       await page.screenshot({ path: path.join(OUT, `${name}.png`), fullPage: full });
     };
@@ -110,13 +114,13 @@ Microsoft Entra ID (formerly Azure Active Directory) is Azure’s cloud identity
     const lib = await openPage('library.html', 1440, 960);
     await shot(lib, '01-library-first-run');
     const inbox = await lib.evaluate(() => new Promise((res) => {
-      const r = indexedDB.open('toru', 1);
+      const r = indexedDB.open('toru');
       r.onsuccess = () => { const q = r.result.transaction('projects').objectStore('projects').get('inbox'); q.onsuccess = () => res(q.result); };
     }));
     check(inbox && inbox.name === 'Inbox', 'Inbox project created on first run');
 
     await lib.evaluate(async (seed) => {
-      const db = await new Promise((res, rej) => { const r = indexedDB.open('toru', 1); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+      const db = await new Promise((res, rej) => { const r = indexedDB.open('toru'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
       const put = (store, values) => new Promise((res, rej) => { const tx = db.transaction(store, 'readwrite'); for (const v of values) tx.objectStore(store).put(v); tx.oncomplete = res; tx.onerror = () => rej(tx.error); });
       await put('projects', seed.projects);
       await put('notes', seed.notes);
@@ -153,13 +157,32 @@ Microsoft Entra ID (formerly Azure Active Directory) is Azure’s cloud identity
     await lib.keyboard.press('Enter');
     await sleep(400);
     const renamed = await lib.evaluate(() => new Promise((res) => {
-      const r = indexedDB.open('toru', 1);
+      const r = indexedDB.open('toru');
       r.onsuccess = () => { const q = r.result.transaction('notes').objectStore('notes').get('n2'); q.onsuccess = () => res(q.result); };
     }));
     check(renamed.title === 'Exploring the Entra admin centre' && renamed.titleEdited === true, 'renaming a note persists and marks titleEdited');
 
     const panel = await openPage('sidepanel.html', 400, 900);
     await shot(panel, '10-sidepanel-idle');
+
+    // ------------------------------------------------ custom dropdowns
+    const projectTrigger = 'button[role="combobox"][aria-label="Project"]';
+    await panel.click(projectTrigger);
+    await sleep(250);
+    const listed = await panel.evaluate(() => [...document.querySelectorAll('[role="listbox"] [role="option"]')].map((o) => o.textContent.trim()));
+    check(listed.includes('Azure Networking') && listed.includes('New project…'), `project dropdown lists projects and “New project…” (${listed.join(' | ')})`);
+    await shot(panel, '10b-sidepanel-dropdown');
+    await panel.evaluate(() => [...document.querySelectorAll('[role="option"]')].find((o) => o.textContent.includes('Azure Networking')).click());
+    await sleep(500);
+    check((await panel.$eval('.list-title', (e) => e.textContent)) === 'Azure Networking', 'choosing a project with the mouse switches the list');
+    await panel.focus(projectTrigger);
+    await panel.keyboard.press('ArrowDown'); // opens on the current choice
+    await sleep(150);
+    await panel.keyboard.press('ArrowDown'); // Azure Networking → Entra ID
+    await panel.keyboard.press('Enter');
+    await sleep(500);
+    check((await panel.$eval('.list-title', (e) => e.textContent)) === 'Entra ID', 'the dropdown works from the keyboard');
+    check((await panel.$('[role="listbox"]')) === null, 'the list closes after choosing');
 
     // ----------------------------------------------------- recording flow
     // Creates the offscreen recorder and swaps in a synthetic audio stream and a mocked OpenAI.
@@ -222,11 +245,11 @@ Microsoft Entra ID (formerly Azure Active Directory) is Azure’s cloud identity
 
     const send = (msg) => sw.evaluate((m) => chrome.runtime.sendMessage(m), msg);
     const readDb = (store, key) => panel.evaluate((store, key) => new Promise((res) => {
-      const r = indexedDB.open('toru', 1);
+      const r = indexedDB.open('toru');
       r.onsuccess = () => { const q = r.result.transaction(store).objectStore(store).get(key); q.onsuccess = () => res(q.result); };
     }), store, key);
     const segmentsOf = (noteId) => panel.evaluate((noteId) => new Promise((res) => {
-      const r = indexedDB.open('toru', 1);
+      const r = indexedDB.open('toru');
       r.onsuccess = () => { const q = r.result.transaction('segments').objectStore('segments').index('noteId').getAll(noteId); q.onsuccess = () => res(q.result); };
     }), noteId);
 
@@ -310,7 +333,7 @@ Microsoft Entra ID (formerly Azure Active Directory) is Azure’s cloud identity
 
     // Stale state is reconciled when the recorder is gone.
     await panel.evaluate(() => new Promise((res) => {
-      const r = indexedDB.open('toru', 1);
+      const r = indexedDB.open('toru');
       r.onsuccess = () => { const tx = r.result.transaction(['meta', 'notes'], 'readwrite'); tx.objectStore('meta').put({ key: 'recording', value: { noteId: 'n4', projectId: 'p-net', tabId: 1, pageKey: 'x', paused: false, elapsedMs: 0, runningSince: Date.now() } }); tx.oncomplete = res; };
     }));
     await panel.evaluate(() => chrome.runtime.sendMessage({ target: 'background', type: 'GET_STATE' }));
@@ -318,7 +341,7 @@ Microsoft Entra ID (formerly Azure Active Directory) is Azure’s cloud identity
 
     // Leftover audio/lines of deleted notes are swept when the recorder is idle.
     await panel.evaluate(() => new Promise((res) => {
-      const r = indexedDB.open('toru', 1);
+      const r = indexedDB.open('toru');
       r.onsuccess = () => {
         const tx = r.result.transaction(['chunks', 'segments'], 'readwrite');
         tx.objectStore('chunks').put({ noteId: 'ghost', index: 0, startMs: 0, endMs: 1000, audio: new Blob([new Uint8Array(2048)]), attempts: 1 });
@@ -331,7 +354,7 @@ Microsoft Entra ID (formerly Azure Active Directory) is Azure’s cloud identity
 
     // Audio that couldn't be transcribed can be discarded from the note.
     await panel.evaluate(() => new Promise((res) => {
-      const r = indexedDB.open('toru', 1);
+      const r = indexedDB.open('toru');
       r.onsuccess = () => {
         const tx = r.result.transaction('chunks', 'readwrite');
         tx.objectStore('chunks').put({ noteId: 'n3', index: 0, startMs: 0, endMs: 20000, audio: new Blob([new Uint8Array(640000)]), attempts: 3, lastError: 'quota' });
@@ -388,7 +411,7 @@ Microsoft Entra ID (formerly Azure Active Directory) is Azure’s cloud identity
 
     // This run's default: AI study notes off.
     await panel.evaluate(() => new Promise((res) => {
-      const r = indexedDB.open('toru', 1);
+      const r = indexedDB.open('toru');
       r.onsuccess = () => {
         const os = r.result.transaction('meta', 'readwrite').objectStore('meta');
         const g = os.get('settings');
@@ -424,6 +447,13 @@ Microsoft Entra ID (formerly Azure Active Directory) is Azure’s cloud identity
     check(rows >= 1, `clicking the mini player shows the live transcript (${rows} lines)`);
     check((await inMini('return root.querySelector(\'[data-el="summary"]\').checked;')) === false, 'mini player shows the AI notes switch (off)');
     await shot(lecture, '15-mini-expanded');
+    await lecture.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'light' }]);
+    await sleep(300);
+    check((await inMini('return root.querySelector(".mini").classList.contains("light");')) === true, 'mini player follows a light system theme live');
+    await shot(lecture, '15b-mini-light');
+    await lecture.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'dark' }]);
+    await sleep(300);
+    check((await inMini('return root.querySelector(".mini").classList.contains("light");')) === false, 'and switches back to dark');
     await panel.setViewport({ width: 400, height: 900, deviceScaleFactor: 1 });
     await shot(panel, '16-sidepanel-recording-controls');
 
@@ -465,6 +495,145 @@ Microsoft Entra ID (formerly Azure Active Directory) is Azure’s cloud identity
     const libUrls = await sw.evaluate(async () => (await chrome.tabs.query({})).map((t) => t.url).filter((u) => u && u.includes('library.html')));
     check(libUrls.some((u) => u.endsWith(`#/note/${g2}`)), 'Open notes opens that lecture in the library');
     server.close();
+
+    // ------------------------------------------------------- Ask (chat)
+    // OpenAI is mocked inside the library page; each test sets the next reply mode.
+    await lib.goto(`chrome-extension://${extId}/library.html#/note/n1`, { waitUntil: 'networkidle0' });
+    await lib.evaluate(() => {
+      window.__chat = { requests: [], mode: 'stream' };
+      const enc = new TextEncoder();
+      // Like a real fetch body, the stream errors with AbortError when the request is aborted.
+      const sse = (pieces, delay, signal) =>
+        new ReadableStream({
+          async start(c) {
+            let aborted = false;
+            signal?.addEventListener('abort', () => {
+              aborted = true;
+              c.error(new DOMException('The operation was aborted.', 'AbortError'));
+            });
+            for (const p of pieces) {
+              if (delay) await new Promise((r) => setTimeout(r, delay));
+              if (aborted) return;
+              c.enqueue(enc.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: p } }] })}\n\n`));
+            }
+            c.enqueue(enc.encode('data: [DONE]\n\n'));
+            c.close();
+          },
+        });
+      const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+      window.fetch = async (url, init) => {
+        const body = JSON.parse(init.body);
+        window.__chat.requests.push(body);
+        const mode = window.__chat.mode;
+        if (mode === 'error') return json(401, { error: { message: 'Incorrect API key provided.' } });
+        if (mode === 'no-stream') {
+          if (body.stream) return json(400, { error: { message: 'Your organization must be verified to stream this model.' } });
+          return json(200, { choices: [{ message: { content: 'Answered without streaming: a **tenant** holds identities.' } }] });
+        }
+        if (mode === 'slow') return new Response(sse(['First part. ', 'Second part. ', 'Third part. ', 'Fourth part.'], 400, init.signal), { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+        return new Response(sse(['A **tenant** is ', 'a dedicated instance ', 'of Entra ID [0:21]. ', 'Each subscription trusts one tenant [0:44].'], 0, init.signal), { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+      };
+    });
+    const messagesOf = (noteId) => panel.evaluate((noteId) => new Promise((res) => {
+      const r = indexedDB.open('toru');
+      r.onsuccess = () => { const q = r.result.transaction('messages').objectStore('messages').index('noteId').getAll(noteId); q.onsuccess = () => res(q.result.sort((a, b) => a.index - b.index)); };
+    }), noteId);
+    const clickTab = (name) => lib.evaluate((name) => [...document.querySelectorAll('[role=tab]')].find((b) => b.textContent.trim().startsWith(name)).click(), name);
+    const askRequests = () => lib.evaluate(() => window.__chat.requests);
+    const setMode = (mode) => lib.evaluate((mode) => (window.__chat.mode = mode), mode);
+
+    await clickTab('Ask');
+    await sleep(300);
+    const suggestions = await lib.evaluate(() => [...document.querySelectorAll('.chat-suggestion')].map((b) => b.textContent));
+    check(suggestions.length === 4, `Ask tab offers starter questions (${suggestions.join(' | ')})`);
+    await shot(lib, '18-ask-empty');
+    await lib.evaluate(() => [...document.querySelectorAll('.chat-suggestion')].find((b) => b.textContent.startsWith('Explain')).click());
+    await lib.waitForFunction(() => [...document.querySelectorAll('.msg-ai .md')].at(-1)?.textContent.includes('trusts one tenant'), { timeout: 10000 });
+    let req = (await askRequests()).at(-1);
+    check(req.stream === true && req.model === 'gpt-5-mini', 'question is streamed with the chosen model');
+    check(req.messages[0].role === 'system' && req.messages[0].content.includes('## Transcript') && req.messages[0].content.includes('[0:21] Every organisation') && req.messages[0].content.includes('## Study notes'), 'the lecture (study notes + timestamped transcript) is sent as context');
+    check(req.messages.at(-1).role === 'user' && req.messages.at(-1).content === 'Explain the main idea simply', 'the question is the last message');
+    await sleep(400);
+    let saved = await messagesOf('n1');
+    check(saved.length === 2 && saved[1].role === 'assistant' && saved[1].content.includes('dedicated instance'), 'question and streamed answer are saved');
+
+    await lib.type('.chat-composer textarea', 'And how many tenants can a subscription trust?');
+    await lib.keyboard.press('Enter');
+    await lib.waitForFunction(() => document.querySelectorAll('.msg-ai .md').length >= 2, { timeout: 10000 });
+    await sleep(400);
+    req = (await askRequests()).at(-1);
+    check(req.messages.length === 4 && req.messages[2].role === 'assistant' && req.messages[3].content.startsWith('And how many'), 'follow-up questions carry the conversation');
+    await shot(lib, '19-ask-conversation');
+
+    await setMode('no-stream');
+    await lib.type('.chat-composer textarea', 'Summarise that in one line');
+    await lib.keyboard.press('Enter');
+    await lib.waitForFunction(() => [...document.querySelectorAll('.msg-ai .md')].at(-1)?.textContent.includes('without streaming'), { timeout: 10000 });
+    const reqs = await askRequests();
+    check(reqs.at(-2).stream === true && !reqs.at(-1).stream, 'falls back to a normal request when streaming isn’t allowed');
+
+    await setMode('error');
+    await lib.type('.chat-composer textarea', 'One more?');
+    await lib.keyboard.press('Enter');
+    await lib.waitForFunction(() => document.querySelector('.chat .callout-error'), { timeout: 10000 });
+    check((await lib.$eval('.chat .callout-error', (e) => e.textContent)).includes('Incorrect API key'), 'errors are shown in the conversation');
+    await setMode('stream');
+    await lib.evaluate(() => [...document.querySelectorAll('.chat .callout-error button')].find((b) => b.textContent.includes('Try again')).click());
+    await lib.waitForFunction(() => !document.querySelector('.chat .callout-error') && [...document.querySelectorAll('.msg-ai .md')].at(-1)?.textContent.includes('trusts one tenant'), { timeout: 10000 });
+    saved = await messagesOf('n1');
+    check(saved.filter((m) => m.error).length === 0 && saved.at(-2).content === 'One more?' && saved.length === 8, `Try again replaces the failed answer (${saved.length} messages)`);
+
+    await setMode('slow');
+    await lib.type('.chat-composer textarea', 'Tell me everything');
+    await lib.keyboard.press('Enter');
+    await lib.waitForFunction(() => [...document.querySelectorAll('.msg-ai .md')].at(-1)?.textContent.includes('Second part'), { timeout: 10000 });
+    await lib.click('.chat-send.stop');
+    await sleep(800);
+    saved = await messagesOf('n1');
+    check(saved.at(-1).stopped === true && saved.at(-1).content.includes('Second part') && !saved.at(-1).content.includes('Fourth'), 'Stop keeps the partial answer, marked as stopped');
+
+    await lib.evaluate(() => [...document.querySelectorAll('.chat-foot button')].find((b) => b.textContent.includes('Clear chat')).click());
+    await sleep(300);
+    await lib.evaluate(() => [...document.querySelectorAll('.modal button')].find((b) => b.textContent.trim() === 'Clear chat').click());
+    await sleep(500);
+    check((await messagesOf('n1')).length === 0, 'Clear chat removes the conversation');
+
+    // ------------------------------------------------------ light / dark
+    const bgOf = (page) => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+    await lib.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'light' }]);
+    await panel.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'light' }]);
+    await sleep(300);
+    check((await bgOf(lib)) === 'rgb(252, 252, 250)', `System theme: a light system gives the light theme (${await bgOf(lib)})`);
+    await lib.goto(`chrome-extension://${extId}/library.html`, { waitUntil: 'networkidle0' });
+    await shot(lib, '20-light-library-home');
+    await lib.goto(`chrome-extension://${extId}/library.html#/note/n1`, { waitUntil: 'networkidle0' });
+    await shot(lib, '21-light-note-summary');
+    await panel.setViewport({ width: 400, height: 900, deviceScaleFactor: 1 });
+    await shot(panel, '22-light-sidepanel');
+
+    await lib.evaluate(() => [...document.querySelectorAll('.nav-item')].find((b) => b.textContent.includes('Settings')).click());
+    await sleep(400);
+    await lib.evaluate(() => [...document.querySelectorAll('.modal [role=radio]')].find((b) => b.textContent === 'Dark').click());
+    await sleep(500);
+    check((await lib.evaluate(() => document.documentElement.dataset.theme)) === 'dark' && (await bgOf(lib)) === 'rgb(17, 17, 15)', 'choosing Dark overrides a light system theme');
+    await sleep(300);
+    check((await panel.evaluate(() => document.documentElement.dataset.theme)) === 'dark', 'the theme change reaches other open TORU pages');
+    await lib.evaluate(() => [...document.querySelectorAll('.modal [role=radio]')].find((b) => b.textContent === 'Light').click());
+    await sleep(400);
+
+    // Model field suggestions (custom list, not the browser's).
+    await lib.click('#tmodel', { count: 3 });
+    await lib.keyboard.type('whis');
+    await sleep(250);
+    const modelOptions = await lib.evaluate(() => [...document.querySelectorAll('[role="listbox"] [role="option"]')].map((o) => o.querySelector('.option-label').textContent));
+    check(modelOptions.length === 1 && modelOptions[0] === 'whisper-1', `model suggestions filter as you type (${modelOptions.join(', ')})`);
+    await shot(lib, '23-light-settings');
+    await lib.keyboard.press('Enter');
+    check((await lib.$eval('#tmodel', (e) => e.value)) === 'whisper-1', 'Enter picks the suggestion');
+    await lib.evaluate(() => [...document.querySelectorAll('.modal button')].find((b) => b.textContent.trim() === 'Cancel').click());
+    await sleep(300);
+    const savedTheme = (await readDb('meta', 'settings')).value;
+    check(savedTheme.theme === 'light' && savedTheme.transcribeModel !== 'whisper-1', 'theme saves straight away; other fields only on Save');
   } catch (e) {
     failures++;
     console.error('ERROR', e);

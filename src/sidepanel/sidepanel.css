@@ -6,7 +6,7 @@
   position: sticky;
   top: 0;
   z-index: 20;
-  background: rgba(17, 17, 15, 0.9);
+  background: var(--bg-translucent);
   backdrop-filter: blur(12px);
 }
 .sp-top.is-recording {
@@ -83,7 +83,7 @@
   padding: 0;
   border: 0;
   background: none;
-  color: var(--lime);
+  color: var(--accent);
   font-size: 12px;
   text-decoration: underline;
   text-underline-offset: 2px;
@@ -139,7 +139,7 @@
   flex: none;
 }
 .toggle-btn.on {
-  color: var(--lime);
+  color: var(--accent);
   background: var(--lime-soft);
 }
 

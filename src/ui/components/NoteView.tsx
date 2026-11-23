@@ -8,10 +8,12 @@ import { useDebouncedSave, useLive, useNote, useProjects } from '../hooks';
 import { IconCopy, IconDownload, IconExpand, IconExternal, IconRefresh, IconSparkle, IconTrash } from '../icons';
 import { Markdown } from '../Markdown';
 import { toast } from '../toast';
-import { LevelBars, Menu, ProjectDot, StatusChip } from './bits';
+import { LevelBars, Menu, StatusChip } from './bits';
 import { useConfirm } from './Modal';
+import { ChatPanel } from './ChatPanel';
+import { Select } from './Select';
 
-type Tab = 'summary' | 'transcript' | 'notes';
+type Tab = 'summary' | 'transcript' | 'notes' | 'ask';
 
 export function NoteView(props: {
   noteId: string;
@@ -68,8 +70,6 @@ export function NoteView(props: {
     );
   }
 
-  const project = projects?.find((p) => p.id === note.projectId);
-
   async function summarise() {
     setBusy('summary');
     try {
@@ -109,8 +109,12 @@ export function NoteView(props: {
   }
 
   async function markdown() {
-    const [segs, proj] = await Promise.all([store.getSegments(noteId), store.getProject(note!.projectId)]);
-    return noteToMarkdown(note!, proj, segs);
+    const [segs, proj, chat] = await Promise.all([
+      store.getSegments(noteId),
+      store.getProject(note!.projectId),
+      store.getMessages(noteId),
+    ]);
+    return noteToMarkdown(note!, proj, segs, chat);
   }
 
   async function copy() {
@@ -192,7 +196,7 @@ export function NoteView(props: {
           onCommit={(title) => store.updateNote(noteId, { title, titleEdited: true })}
         />
         <div className="meta-row">
-          <ProjectPicker note={note} project={project} projects={projects ?? []} />
+          <ProjectPicker note={note} projects={projects ?? []} />
           <span className="chip">{formatDate(note.createdAt)}</span>
           {note.durationMs > 0 && <span className="chip">{formatDuration(note.durationMs)}</span>}
           {note.sourceUrl && (
@@ -244,6 +248,9 @@ export function NoteView(props: {
           <button role="tab" aria-selected={tab === 'notes'} onClick={() => setTab('notes')}>
             My notes{note.myNotes.trim() ? <span className="dot" style={{ width: 5, height: 5, background: 'var(--lime)' }} /> : null}
           </button>
+          <button role="tab" aria-selected={tab === 'ask'} onClick={() => setTab('ask')}>
+            Ask
+          </button>
         </div>
       </div>
 
@@ -261,6 +268,7 @@ export function NoteView(props: {
           />
         )}
         {tab === 'notes' && <MyNotes key={note.id} note={note} />}
+        {tab === 'ask' && <ChatPanel note={note} hasTranscript={(segments?.length ?? 0) > 0} />}
         <div ref={endRef} />
       </div>
       {confirmEl}
@@ -268,24 +276,16 @@ export function NoteView(props: {
   );
 }
 
-function ProjectPicker({ note, project, projects }: { note: Note; project?: Project; projects: Project[] }) {
+function ProjectPicker({ note, projects }: { note: Note; projects: Project[] }) {
   return (
-    <label className="chip" style={{ position: 'relative', cursor: 'pointer' }} title="Move to another project">
-      <ProjectDot project={project} size={7} />
-      {project?.name ?? 'No project'}
-      <select
-        aria-label="Project"
-        value={note.projectId}
-        onChange={(e) => store.updateNote(note.id, { projectId: e.target.value })}
-        style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }}
-      >
-        {projects.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.name}
-          </option>
-        ))}
-      </select>
-    </label>
+    <Select
+      variant="chip"
+      ariaLabel="Move to project"
+      title="Move to another project"
+      value={note.projectId}
+      options={projects.map((p) => ({ value: p.id, label: p.name, dot: p.color }))}
+      onChange={(projectId) => void store.updateNote(note.id, { projectId })}
+    />
   );
 }
 

@@ -1,5 +1,5 @@
 import { formatClock, formatDate, formatDuration } from './format';
-import type { Note, Project, Segment } from './types';
+import type { ChatMessage, Note, Project, Segment } from './types';
 
 function header(note: Note, project?: Project): string {
   const meta = [project?.name, formatDate(note.createdAt), note.durationMs ? formatDuration(note.durationMs) : '']
@@ -10,10 +10,20 @@ function header(note: Note, project?: Project): string {
   return lines.join('\n');
 }
 
-export function noteToMarkdown(note: Note, project: Project | undefined, segments: Segment[]): string {
+export function noteToMarkdown(
+  note: Note,
+  project: Project | undefined,
+  segments: Segment[],
+  chat: ChatMessage[] = [],
+): string {
   const parts = [header(note, project)];
   if (note.summary) parts.push(note.summary.trim());
   if (note.myNotes.trim()) parts.push(`## My notes\n\n${note.myNotes.trim()}`);
+  const qa = chat.filter((m) => !m.error && m.content.trim());
+  if (qa.length) {
+    const turns = qa.map((m) => (m.role === 'user' ? `**Q:** ${m.content.trim()}` : m.content.trim()));
+    parts.push(`## Questions and answers\n\n${turns.join('\n\n')}`);
+  }
   if (segments.length) {
     parts.push(`## Transcript\n\n${segments.map((s) => `**[${formatClock(s.startMs)}]** ${s.text}`).join('\n\n')}`);
   }

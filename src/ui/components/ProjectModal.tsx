@@ -5,6 +5,7 @@ import type { Project } from '../../lib/types';
 import { toast } from '../toast';
 import { LANGUAGES } from './languages';
 import { Modal, useConfirm } from './Modal';
+import { Select } from './Select';
 
 /** Create a project (no `project`) or edit an existing one. */
 export function ProjectModal(props: {
@@ -126,13 +127,13 @@ export function ProjectModal(props: {
         <div className="grid-2">
           <div className="field">
             <label htmlFor="plang">Spoken language</label>
-            <select id="plang" className="input" value={language} onChange={(e) => setLanguage(e.target.value)}>
-              {LANGUAGES.map(([code, label]) => (
-                <option key={code} value={code}>
-                  {code ? label : 'Use default'}
-                </option>
-              ))}
-            </select>
+            <Select
+              id="plang"
+              ariaLabel="Spoken language"
+              value={language}
+              options={LANGUAGES.map(([code, label]) => ({ value: code, label: code ? label : 'Use default' }))}
+              onChange={setLanguage}
+            />
           </div>
           {!isInbox && (
             <div className="field">

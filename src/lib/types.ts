@@ -54,6 +54,20 @@ export interface Segment {
   text: string;
 }
 
+/** One turn of the "Ask" conversation about a lecture. */
+export interface ChatMessage {
+  noteId: string;
+  index: number;
+  role: 'user' | 'assistant';
+  content: string;
+  createdAt: number;
+  model?: string;
+  /** The answer was cut short with Stop. */
+  stopped?: boolean;
+  /** The request failed; content is empty and this explains why. */
+  error?: string;
+}
+
 /** Audio waiting to be transcribed. Deleted once its segment is stored. */
 export interface PendingChunk {
   noteId: string;
@@ -78,11 +92,15 @@ export interface Settings {
   summaryPrompt: string;
   /** Where to follow a live recording; remembers the last view used. */
   recordingView: RecordingView;
+  /** Colour theme; 'system' follows the operating system. */
+  theme: ThemePreference;
   lastProjectId?: string;
 }
 
 /** 'panel' = Chrome side panel, 'mini' = floating mini player on the recorded page. */
 export type RecordingView = 'panel' | 'mini';
+
+export type ThemePreference = 'system' | 'light' | 'dark';
 
 export interface RecordingState {
   noteId: string;

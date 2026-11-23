@@ -3,7 +3,7 @@
 import * as db from './db';
 import { emit } from './events';
 import { DEFAULT_SUMMARY_PROMPT } from './prompts';
-import type { Note, PendingChunk, Project, RecordingState, Segment, Settings } from './types';
+import type { ChatMessage, Note, PendingChunk, Project, RecordingState, Segment, Settings } from './types';
 
 export const INBOX_ID = 'inbox';
 
@@ -17,6 +17,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoSummarize: true,
   autoSplit: true,
   recordingView: 'panel',
+  theme: 'system',
   summaryPrompt: DEFAULT_SUMMARY_PROMPT,
 };
 
@@ -198,6 +199,7 @@ export async function updateNote(
 export async function deleteNote(id: string): Promise<void> {
   await db.deleteByIndex('segments', 'noteId', id);
   await db.deleteByIndex('chunks', 'noteId', id);
+  await db.deleteByIndex('messages', 'noteId', id);
   await db.del('notes', id);
   emit({ type: 'notes', noteId: id });
 }
@@ -221,6 +223,25 @@ export async function getAllSegments(): Promise<Segment[]> {
 export async function putSegment(segment: Segment): Promise<void> {
   await db.put('segments', segment);
   emit({ type: 'segments', noteId: segment.noteId });
+}
+
+// ---------------------------------------------------------------- messages
+
+export async function getMessages(noteId: string): Promise<ChatMessage[]> {
+  const messages = await db.getAllByIndex<ChatMessage>('messages', 'noteId', noteId);
+  return messages.sort((a, b) => a.index - b.index);
+}
+
+export async function putMessage(message: ChatMessage): Promise<void> {
+  await db.put('messages', message);
+  emit({ type: 'messages', noteId: message.noteId });
+}
+
+/** Deletes a note's messages from `fromIndex` on (all of them by default). */
+export async function deleteMessages(noteId: string, fromIndex = 0): Promise<void> {
+  const keys = await db.getRangeKeys('messages', IDBKeyRange.bound([noteId, fromIndex], [noteId, Infinity]));
+  await db.deleteKeys('messages', keys);
+  emit({ type: 'messages', noteId });
 }
 
 // ------------------------------------------------------------------ chunks
@@ -277,7 +298,7 @@ export async function discardChunks(opts: { noteId?: string; keepNoteId?: string
 export async function sweepOrphans(): Promise<number> {
   const noteIds = new Set((await db.getAllKeys('notes')) as string[]);
   let removed = 0;
-  for (const name of ['chunks', 'segments'] as const) {
+  for (const name of ['chunks', 'segments', 'messages'] as const) {
     const keys = (await db.getAllKeys(name)) as [string, number][];
     const orphans = keys.filter(([noteId]) => !noteIds.has(noteId));
     await db.deleteKeys(name, orphans);
@@ -296,6 +317,8 @@ export interface Backup {
   projects: Project[];
   notes: Note[];
   segments: Segment[];
+  /** Ask conversations (added later; older backups don't have them). */
+  messages?: ChatMessage[];
 }
 
 export async function exportBackup(): Promise<Backup> {
@@ -308,6 +331,7 @@ export async function exportBackup(): Promise<Backup> {
     projects: await db.getAll<Project>('projects'),
     notes: await db.getAll<Note>('notes'),
     segments: await db.getAll<Segment>('segments'),
+    messages: await db.getAll<ChatMessage>('messages'),
   };
 }
 
@@ -324,6 +348,7 @@ export async function importBackup(data: unknown): Promise<{ projects: number; n
   await db.putMany('projects', b.projects);
   await db.putMany('notes', notes);
   await db.putMany('segments', Array.isArray(b.segments) ? b.segments : []);
+  await db.putMany('messages', Array.isArray(b.messages) ? b.messages : []);
   if (b.settings) {
     const { apiKey: _omit, ...rest } = b.settings;
     await saveSettings(rest);
